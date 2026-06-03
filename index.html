@@ -85,7 +85,6 @@ function uid(){ return 'obra_'+Math.random().toString(36).slice(2,10)+'_'+Date.n
 function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function normalizeName(name){ return String(name || '').trim().toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9\-_]/gi,''); }
 function fileBaseName(name){ return String(name || '').replace(/\.[^.]+$/, ''); }
-function stripAccents(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim(); }
 function checkAuth(){ if(localStorage.getItem('cronograma_auth')==='true'){ loginView.style.display='none'; appView.style.display='block'; loadState(); } else { loginView.style.display='flex'; appView.style.display='none'; } }
 document.getElementById('loginForm').addEventListener('submit',function(e){ e.preventDefault(); const btnText=document.getElementById('btnText'), spinner=document.getElementById('spinner'), submitBtn=document.getElementById('submitBtn'); btnText.textContent='Autenticando...'; spinner.style.display='block'; submitBtn.disabled=true; setTimeout(()=>{ localStorage.setItem('cronograma_auth','true'); btnText.textContent='Entrar no sistema'; spinner.style.display='none'; submitBtn.disabled=false; document.getElementById('password').value=''; checkAuth(); },500); });
 document.getElementById('logoutBtn').addEventListener('click',function(){ localStorage.removeItem('cronograma_auth'); checkAuth(); });
@@ -97,100 +96,86 @@ function currentObra(){ return obras.find(o=>o.id===selectedObraId); }
 function renderObrasBox(){ const box=document.getElementById('obrasBox'); if(!box) return; box.innerHTML=`<div class="form-group" style="margin-bottom:0;"><label>Selecionar obra</label><select id="obraSelect" class="form-control">${obras.map(o=>`<option value="${o.id}" ${o.id===selectedObraId?'selected':''}>${esc(o.nome || fileBaseName(o.arquivoNome) || 'Obra')}</option>`).join('')}</select></div><div style="display:flex; gap:.5rem; flex-wrap:wrap;"><button class="btn btn-sec" id="openObraBtn">Abrir</button><button class="btn btn-sec" id="replaceObraBtn">Atualizar obra</button><button class="btn btn-danger" id="deleteObraBtn">Remover obra</button></div>`; document.getElementById('obraSelect').onchange=e=>{ selectedObraId=e.target.value; const o=currentObra(); if(o){ applySelected(o); renderAll(); syncState(); } }; document.getElementById('openObraBtn').onclick=()=>{ const o=currentObra(); if(o) applySelected(o); renderAll(); }; document.getElementById('replaceObraBtn').onclick=()=>loadFromJsonOrExcel(true); document.getElementById('deleteObraBtn').onclick=()=>{ if(!selectedObraId) return; obras=obras.filter(o=>o.id!==selectedObraId); selectedObraId=obras[0]?.id || null; if(selectedObraId) applySelected(currentObra()); else { rows=[]; sourceContrato=null; } syncState(); renderAll(); }; }
 function renderTable(){ tbody.innerHTML=rows.map((r,i)=>`<tr data-i="${i}"><td contenteditable="true" data-k="item">${esc(r.item)}</td><td contenteditable="true" data-k="descricao">${esc(r.descricao)}</td><td contenteditable="true" data-k="valorContrato" style="text-align:right">${fmtMoney(r.valorContrato)}</td><td contenteditable="true" data-k="medicao" style="text-align:right">${fmtMoney(r.medicao)}</td><td contenteditable="true" data-k="acumulado" style="text-align:right">${fmtMoney(r.acumulado)}</td><td contenteditable="true" data-k="saldo" style="text-align:right">${fmtMoney(r.saldo)}</td><td contenteditable="true" data-k="percentualExecutado" style="text-align:right;font-weight:700">${Number(r.percentualExecutado||0).toFixed(2)}</td><td style="text-align:right"><button data-del="${i}" class="btn btn-danger" style="padding:.4rem;border-radius:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events:none"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></td></tr>`).join(''); }
 function updateChart(){ const ctx=document.getElementById('sCurveChart').getContext('2d'); const labels=rows.map(r=>String(r.item||'')); const data=rows.map(r=>Number(r.percentualExecutado)||0); if(chartInstance) chartInstance.destroy(); const theme=document.documentElement.dataset.theme, gridColor=theme==='dark'?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', textColor=theme==='dark'?'#94a3b8':'#64748b'; chartInstance=new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:'% Geral da Obra',data,backgroundColor:'rgba(99,102,241,0.2)',borderColor:'#6366f1',borderWidth:1,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100,grid:{color:gridColor},ticks:{color:textColor,callback:v=>v+'%'}},x:{grid:{display:false},ticks:{color:textColor}}},plugins:{legend:{labels:{color:textColor}}}}}); }
-function updateDashboard(){ const done=rows.filter(r=>Number(r.percentualExecutado)>=99.5).length; const resumoPct=Number(sourceContrato?.resumo?.percentual); const totalPct=!isNaN(resumoPct)&&resumoPct>0 ? resumoPct : (()=>{ const totalContrato=rows.reduce((a,r)=>a+(Number(r.valorContrato)||0),0); const totalAcumulado=rows.reduce((a,r)=>a+(Number(r.acumulado)||0),0); return totalContrato>0 ? (totalAcumulado/totalContrato*100) : 0; })(); stats.innerHTML=`<div class="stat-card"><span class="stat-label">Itens Totais</span><span class="stat-value">${rows.length}</span></div><div class="stat-card"><span class="stat-label">Concluídos</span><span class="stat-value" style="color:var(--success)">${done}</span></div><div class="stat-card"><span class="stat-label">% Geral da Obra</span><span class="stat-value">${totalPct.toFixed(2)}%</span></div><div class="stat-card"><span class="stat-label">Medição Atual</span><span class="stat-value" style="font-size:1.2rem">${esc(sourceContrato?.medicaoAtual||'BM 10')}</span></div>`; document.getElementById('countAll').textContent=obras.length; document.getElementById('countDone').textContent=done; document.getElementById('countPct').textContent=totalPct.toFixed(2)+'%'; updateChart(); }
+function updateDashboard(){ const done=rows.filter(r=>Number(r.percentualExecutado)>=99.5).length; const resumoPct=Number(sourceContrato?.resumo?.percentual); const totalPct=!isNaN(resumoPct) ? resumoPct : (()=>{ const totalContrato=rows.reduce((a,r)=>a+(Number(r.valorContrato)||0),0); const totalAcumulado=rows.reduce((a,r)=>a+(Number(r.acumulado)||0),0); return totalContrato>0 ? (totalAcumulado/totalContrato*100) : 0; })(); stats.innerHTML=`<div class="stat-card"><span class="stat-label">Itens Totais</span><span class="stat-value">${rows.length}</span></div><div class="stat-card"><span class="stat-label">Concluídos</span><span class="stat-value" style="color:var(--success)">${done}</span></div><div class="stat-card"><span class="stat-label">% Geral da Obra</span><span class="stat-value">${totalPct.toFixed(2)}%</span></div><div class="stat-card"><span class="stat-label">Medição Atual</span><span class="stat-value" style="font-size:1.2rem">${esc(sourceContrato?.medicaoAtual||'BM 10')}</span></div>`; document.getElementById('countAll').textContent=obras.length; document.getElementById('countDone').textContent=done; document.getElementById('countPct').textContent=totalPct.toFixed(2)+'%'; updateChart(); }
 function renderAll(){ renderObrasBox(); renderTable(); updateDashboard(); }
 function normalizeImportedRows(list){ if(!Array.isArray(list)) return []; return list.map(item=>({ item:item?.item??'', descricao:item?.descricao??item?.descricaoServico??item?.name??'', valorContrato:Number(item?.valorContrato??item?.valor_contrato??0)||0, medicao:Number(item?.medicao??0)||0, acumulado:Number(item?.acumulado??0)||0, saldo:Number(item?.saldo??0)||0, percentualExecutado:Number(item?.percentualExecutado??item?.percentual_executado??0)||0 })); }
-
 async function readExcelFile(file){
-  const buffer = await file.arrayBuffer();
-  const wb = XLSX.read(buffer, {type:'array'});
-  // Seleciona a aba BM/MED mais recente
-  const target = wb.SheetNames.filter(n=>/^(BM|MED)\s*\d+/i.test(n))
-    .sort((a,b)=>parseInt(a.match(/\d+/)?.[0]||0)-parseInt(b.match(/\d+/)?.[0]||0)).at(-1)
-    || wb.SheetNames.at(-1);
-  const ws = wb.Sheets[target];
-  const data = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+  const buffer=await file.arrayBuffer();
+  const wb=XLSX.read(buffer,{type:'array'});
+  const target=wb.SheetNames.filter(n=>/^(BM|MED)\s*\d+/i.test(n)).sort((a,b)=>parseInt(a.match(/\d+/)?.[0]||0)-parseInt(b.match(/\d+/)?.[0]||0)).at(-1) || wb.SheetNames.at(-1);
+  const ws=wb.Sheets[target];
+  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
 
-  // ── 1. Localiza a célula âncora "MEDIÇÃO" ──────────────────────────────────
-  let anchorRow = -1, anchorCol = -1;
-  outer: for(let r=0; r<data.length; r++){
-    for(let c=0; c<(data[r]||[]).length; c++){
-      if(stripAccents(data[r][c]) === 'MEDICAO'){
-        anchorRow = r; anchorCol = c; break outer;
+  // Busca dinâmica: localiza a linha que contém a célula "MEDIÇÃO" (mesclada)
+  let medicaoRow=-1, medicaoCol=-1;
+  for(let r=0;r<data.length;r++){
+    for(let c=0;c<(data[r]||[]).length;c++){
+      const v=String(data[r][c]||'').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if(v==='MEDICAO'||v==='MEDI\u00c7\u00c3O'||v==='MEDI\u00c7AO'||v==='MEDIC\u00c3O'||v==='MEDICAO'){
+        medicaoRow=r; medicaoCol=c; break;
+      }
+    }
+    if(medicaoRow>=0) break;
+  }
+
+  // Linha de sub-cabeçalhos: "no periodo", "acumulado", "saldo"
+  let colMedicao=-1, colAcumulado=-1, colSaldo=-1, colValorContrato=-1, subHeaderRow=-1;
+  if(medicaoRow>=0){
+    subHeaderRow=medicaoRow+1;
+    const subRow=data[subHeaderRow]||[];
+    for(let c=0;c<subRow.length;c++){
+      const v=String(subRow[c]||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if(v.includes('periodo')||v.includes('period')) colMedicao=c;
+      else if(v.includes('acumulado')) colAcumulado=c;
+      else if(v.includes('saldo')) colSaldo=c;
+    }
+    // Busca coluna "valor" ou "contrato" na mesma linha ou linha anterior
+    const contractRow=data[medicaoRow]||[];
+    for(let c=0;c<contractRow.length;c++){
+      const v=String(contractRow[c]||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if(v.includes('contrato')||v.includes('valor contrato')) { colValorContrato=c; break; }
+    }
+    // Fallback: busca na sub-linha também
+    if(colValorContrato<0){
+      for(let c=0;c<subRow.length;c++){
+        const v=String(subRow[c]||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+        if(v.includes('contrato')||v.includes('valor')) { colValorContrato=c; break; }
       }
     }
   }
 
-  // ── 2. Define colunas relativas à âncora ────────────────────────────────────
-  // Estrutura padrão: MEDIÇÃO está mesclada sobre [anchorCol, anchorCol+1, anchorCol+2]
-  // Linha anchorRow+1 tem os sub-rótulos: "no periodo" | "acumulado" | "saldo"
-  // Usamos posição relativa: col+0=medicao, col+1=acumulado, col+2=saldo
-  let colMedicao, colAcumulado, colSaldo, colValorContrato, subHeaderRow, dataStart;
+  // Fallback para posicões fixas caso não encontre MEDIÇÃO
+  if(colMedicao<0) colMedicao=13;
+  if(colAcumulado<0) colAcumulado=14;
+  if(colSaldo<0) colSaldo=15;
+  if(colValorContrato<0) colValorContrato=12;
 
-  if(anchorRow >= 0){
-    subHeaderRow = anchorRow + 1;
-    colMedicao      = anchorCol;     // "no periodo" — primeira coluna do bloco
-    colAcumulado    = anchorCol + 1; // "acumulado"
-    colSaldo        = anchorCol + 2; // "saldo"
-    dataStart       = subHeaderRow + 1; // dados começam na próxima linha
+  // Linha de resumo: usa sub-cabeçalho se encontrado, senão linha 6
+  const resumoRow = subHeaderRow>=0 ? subHeaderRow : 6;
+  const headerRow=data[resumoRow]||[];
+  const summaryTotal=Number(headerRow[colValorContrato])||0;
+  const summaryAcumulado=Number(headerRow[colAcumulado])||0;
+  const summaryPct=summaryTotal>0 ? +(summaryAcumulado/summaryTotal*100).toFixed(2) : 0;
 
-    // Busca "VALOR CONTRATO" nas linhas de cabeçalho (até anchorRow)
-    colValorContrato = -1;
-    for(let r=0; r<=anchorRow && colValorContrato<0; r++){
-      for(let c=0; c<(data[r]||[]).length; c++){
-        const v = stripAccents(data[r][c]);
-        if(v.includes('CONTRATO')){ colValorContrato = c; break; }
-      }
-    }
-    // Fallback: coluna imediatamente antes do bloco MEDIÇÃO
-    if(colValorContrato < 0) colValorContrato = anchorCol - 1;
-  } else {
-    // Fallback total para planilhas sem âncora
-    colMedicao = 13; colAcumulado = 14; colSaldo = 15; colValorContrato = 12;
-    subHeaderRow = 6; dataStart = 10;
-  }
-
-  // ── 3. Resumo geral (linha de sub-cabeçalho contém os totais) ───────────────
-  const subRow = data[subHeaderRow] || [];
-  const summaryTotal      = Number(subRow[colValorContrato]) || 0;
-  const summaryAcumulado  = Number(subRow[colAcumulado])     || 0;
-  const summaryPct = summaryTotal > 0 ? +(summaryAcumulado/summaryTotal*100).toFixed(2) : 0;
-
-  // ── 4. Leitura dos itens ─────────────────────────────────────────────────────
-  // Item está sempre na coluna 0; descrição na coluna 3
-  const items = [];
-  for(let r=dataStart; r<data.length; r++){
-    const row = data[r] || [];
-    const rawItem  = row[0];
-    const descricao = row[3];
-    const itemText = rawItem == null ? '' : String(rawItem).trim();
+  // Linha de dados: começa 2 linhas após o sub-cabeçalho, ou na linha 10 como fallback
+  const dataStart = subHeaderRow>=0 ? subHeaderRow+1 : 10;
+  const items=[];
+  for(let r=dataStart;r<data.length;r++){
+    const row=data[r]||[];
+    const rawItem=row[0];
+    const descricao=row[3];
+    const itemText=rawItem===null||rawItem===undefined?'':String(rawItem).trim();
     if(/^\d+$/.test(itemText) && descricao){
-      const valorContrato = Number(row[colValorContrato]) || 0;
-      const medicao       = Number(row[colMedicao])       || 0;
-      const acumulado     = Number(row[colAcumulado])     || 0;
-      const saldo         = Number(row[colSaldo])         || 0;
-      const percentualExecutado = valorContrato > 0 ? +(acumulado/valorContrato*100).toFixed(2) : 0;
-      items.push({
-        item: itemText,
-        descricao: String(descricao).trim(),
-        valorContrato: +valorContrato.toFixed(2),
-        medicao:       +medicao.toFixed(2),
-        acumulado:     +acumulado.toFixed(2),
-        saldo:         +saldo.toFixed(2),
-        percentualExecutado
-      });
+      const valorContrato=Number(row[colValorContrato])||0;
+      const medicao=Number(row[colMedicao])||0;
+      const acumulado=Number(row[colAcumulado])||0;
+      const saldo=Number(row[colSaldo])||0;
+      const percentualExecutado=valorContrato>0 ? +(acumulado/valorContrato*100).toFixed(2) : 0;
+      items.push({item:itemText,descricao:String(descricao).trim(),valorContrato:+valorContrato.toFixed(2),medicao:+medicao.toFixed(2),acumulado:+acumulado.toFixed(2),saldo:+saldo.toFixed(2),percentualExecutado});
     }
   }
-
-  return {
-    nome: target,
-    nomeProjeto: wb.Props?.Title || 'Nova obra',
-    medicaoAtual: target,
-    itens: items,
-    resumo: { total: summaryTotal, acumulado: summaryAcumulado, percentual: summaryPct }
-  };
+  return { nome: target, nomeProjeto: wb.Props?.Title || 'Nova obra', medicaoAtual: target, itens: items, resumo:{total:summaryTotal, acumulado:summaryAcumulado, percentual:summaryPct} };
 }
-
 function convertContratoJson(obj){ const servicos=Array.isArray(obj?.servicos)?obj.servicos:[]; return servicos.map(servico=>{ const valorTotal=Number(servico?.valorTotal)||0; const medicoes=Array.isArray(servico?.medicoes)?servico.medicoes:[]; const totalRealizado=medicoes.reduce((acc,m)=>acc+(Number(m?.realizado)||0),0); const pct=valorTotal>0?Math.max(0,Math.min(100,(totalRealizado/valorTotal)*100)):0; return {item:String(servico?.item??''),descricao:servico?.servico??'',valorContrato:+valorTotal.toFixed(2),medicao:+totalRealizado.toFixed(2),acumulado:+totalRealizado.toFixed(2),saldo:+(valorTotal-totalRealizado).toFixed(2),percentualExecutado:+pct.toFixed(2)}; }); }
 function loadFromJsonOrExcel(replace=false){ const input=document.createElement('input'); input.type='file'; input.accept='.json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; input.onchange=async e=>{ if(!e.target.files.length) return; const file=e.target.files[0]; const ext=file.name.split('.').pop().toLowerCase(); try{ let obj, importedRows=[]; if(ext==='xlsx'){ obj=await readExcelFile(file); importedRows=normalizeImportedRows(obj.itens); } else { const text=await file.text(); obj=JSON.parse(text); if(Array.isArray(obj)) importedRows=normalizeImportedRows(obj); else if(Array.isArray(obj.itens)) importedRows=normalizeImportedRows(obj.itens); else if(Array.isArray(obj.lines)) importedRows=normalizeImportedRows(obj.lines); else if(Array.isArray(obj.servicos)) importedRows=convertContratoJson(obj); else throw new Error('Formato inválido'); } const obraNome = obj.nome || obj.medicaoAtual || fileBaseName(file.name); const obraId = normalizeName(fileBaseName(file.name)) || uid(); const obra={ id: replace && selectedObraId ? selectedObraId : obraId, nome: obraNome, nomeProjeto: obj.nomeProjeto || obj.obra || '', cliente: obj.cliente || '', arquivoNome: file.name, origem: ext, medicaoAtual: obj.medicaoAtual || obj.nome || '', itens: importedRows, resumo: obj.resumo || {percentual: 0} }; if(replace && selectedObraId){ obras=obras.map(o=>o.id===selectedObraId?obra:o); } else { obras.push(obra); selectedObraId=obra.id; } applySelected(obra); syncState(); isDirty=false; dirtyWarning.classList.remove('visible'); renderAll(); alert('Arquivo importado com sucesso.'); }catch(err){ console.error(err); alert('Não foi possível importar o arquivo.'); } }; input.click(); }
 function addRowFromInputs(){ rows.push({item:'',descricao:document.getElementById('fName').value||'Nova atividade',valorContrato:0,medicao:0,acumulado:Number(document.getElementById('fPct').value)||0,saldo:0,percentualExecutado:Number(document.getElementById('fPct').value)||0}); const o=currentObra(); if(o) o.itens=rows; renderAll(); markDirty(); }
