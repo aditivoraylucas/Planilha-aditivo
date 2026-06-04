@@ -11,7 +11,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-    import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, deleteDoc, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBc7jh4dai3OZIriKdFxguI44A73TRKYTI",
@@ -43,10 +43,10 @@
     let chartInstance = null, adminChartInstance = null;
     let allUsersData = {};
     let adminUnsubMap = {};
-    // admin drill-down
     let adminSelectedUid = null, adminSelectedObraId = null;
+    // ── flag anti-duplo submit ────────────────────────────────────────────────
+    let colabFormReady = false;
 
-    // ── views ─────────────────────────────────────────────────────────────────
     const $ = id => document.getElementById(id);
     function showView(name){
       ['loginView','appView','adminView'].forEach(v=>$(v).style.display='none');
@@ -89,6 +89,7 @@
       Object.values(adminUnsubMap).forEach(fn=>fn());
       adminUnsubMap={}; allUsersData={};
       adminSelectedUid=null; adminSelectedObraId=null;
+      colabFormReady=false;
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -97,20 +98,45 @@
     function initAdminView(){
       showView('adminView');
       listenAllUsers();
-      setupAdminColabForm();
+      // ── FIX: registra o form só uma vez ──────────────────────────────────
+      if(!colabFormReady){
+        colabFormReady = true;
+        setupAdminColabForm();
+      }
+      $('adminToggleColab').onclick = ()=>{
+        const p=$('adminColabPanel');
+        p.style.display=p.style.display==='none'?'block':'none';
+      };
     }
 
     function listenAllUsers(){
+      if(unsubAllObras) unsubAllObras();
       unsubAllObras = onSnapshot(collection(db,'users'), snap => {
-        snap.docs.forEach(d => {
+        snap.docChanges().forEach(change => {
+          const d = change.doc;
           const data = d.data();
-          if(!allUsersData[d.id]) allUsersData[d.id] = {nome:data.nome||data.email, email:data.email, role:data.role, obras:[]};
+          // ignora usuários desativados
+          if(data.disabled){
+            if(allUsersData[d.id]){
+              delete allUsersData[d.id];
+              if(adminUnsubMap[d.id]){ adminUnsubMap[d.id](); delete adminUnsubMap[d.id]; }
+            }
+            return;
+          }
+          if(change.type==='removed'){
+            delete allUsersData[d.id];
+            if(adminUnsubMap[d.id]){ adminUnsubMap[d.id](); delete adminUnsubMap[d.id]; }
+            return;
+          }
+          if(!allUsersData[d.id]) allUsersData[d.id]={nome:data.nome||data.email,email:data.email,role:data.role,obras:[]};
           else { allUsersData[d.id].nome=data.nome||data.email; allUsersData[d.id].email=data.email; allUsersData[d.id].role=data.role; }
+
           if(data.role!=='admin' && !adminUnsubMap[d.id]){
             adminUnsubMap[d.id] = onSnapshot(collection(db,'users',d.id,'obras'), oSnap => {
               allUsersData[d.id].obras = oSnap.docs.map(o=>({id:o.id,...o.data()}));
               renderAdminStats();
               renderAdminColabSidebar();
+              renderColabList();
               if(adminSelectedUid===d.id) renderAdminObraDetail();
             });
           }
@@ -121,17 +147,13 @@
       });
     }
 
-    // ── sidebar de colaboradores (admin) ──────────────────────────────────────
+    // ── sidebar colaboradores ────────────────────────────────────────────────
     function renderAdminColabSidebar(){
-      const box = $('adminColabSidebar'); if(!box) return;
-      const colabs = Object.entries(allUsersData).filter(([,u])=>u.role!=='admin');
-      if(!colabs.length){
-        box.innerHTML='<p style="color:var(--text-muted);font-size:.8rem;padding:.5rem">Nenhum colaborador ainda.</p>';
-        return;
-      }
-      box.innerHTML = colabs.map(([uid,u])=>{
-        const n = (u.obras||[]).length;
-        const active = uid===adminSelectedUid;
+      const box=$('adminColabSidebar'); if(!box) return;
+      const colabs=Object.entries(allUsersData).filter(([,u])=>u.role!=='admin');
+      if(!colabs.length){ box.innerHTML='<p style="color:var(--text-muted);font-size:.8rem;padding:.5rem">Nenhum colaborador ainda.</p>'; return; }
+      box.innerHTML=colabs.map(([uid,u])=>{
+        const n=(u.obras||[]).length, active=uid===adminSelectedUid;
         return `<div class="colab-sidebar-item ${active?'active':''}" onclick="adminSelectColab('${uid}')">
           <div style="font-weight:600;font-size:.875rem">${esc(u.nome)}</div>
           <div style="font-size:.75rem;color:var(--text-muted)">${n} obra${n!==1?'s':''}</div>
@@ -140,22 +162,19 @@
     }
 
     window.adminSelectColab = uid => {
-      adminSelectedUid = uid;
-      adminSelectedObraId = null;
-      renderAdminColabSidebar();
-      renderAdminObraDetail();
+      adminSelectedUid=uid; adminSelectedObraId=null;
+      renderAdminColabSidebar(); renderAdminObraDetail();
     };
 
-    // ── detalhe da obra selecionada pelo admin ────────────────────────────────
+    // ── detalhe obra admin ───────────────────────────────────────────────────
     function renderAdminObraDetail(){
-      const panel = $('adminDetailPanel'); if(!panel) return;
+      const panel=$('adminDetailPanel'); if(!panel) return;
       if(!adminSelectedUid){ panel.innerHTML='<p style="color:var(--text-muted);padding:1rem">Selecione um colaborador ao lado para ver as obras.</p>'; return; }
-      const u = allUsersData[adminSelectedUid];
+      const u=allUsersData[adminSelectedUid];
       if(!u){ panel.innerHTML=''; return; }
-      const obrasList = u.obras||[];
+      const obrasList=u.obras||[];
 
-      // seletor de obras
-      let html = `<div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem">
+      let html=`<div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem">
         <div style="font-weight:700;font-size:1.1rem">👤 ${esc(u.nome)}</div>
         <div class="form-group" style="margin:0;min-width:220px">
           <select id="adminObraSelect" class="form-control" onchange="adminSelectObra(this.value)">
@@ -165,26 +184,22 @@
         </div>
       </div>`;
 
-      if(!adminSelectedObraId || !obrasList.length){
-        // resumo de todas as obras do colaborador
-        if(!obrasList.length){ html+='<p style="color:var(--text-muted)">Este colaborador não tem obras cadastradas.</p>'; }
-        else {
-          html += obrasList.map(obra => adminObraCardHTML(obra)).join('');
-        }
-        panel.innerHTML = html; return;
+      if(!adminSelectedObraId||!obrasList.length){
+        html += obrasList.length ? obrasList.map(adminObraCardHTML).join('') : '<p style="color:var(--text-muted)">Este colaborador não tem obras cadastradas.</p>';
+        panel.innerHTML=html; return;
       }
 
-      const obra = obrasList.find(o=>o.id===adminSelectedObraId);
+      const obra=obrasList.find(o=>o.id===adminSelectedObraId);
       if(!obra){ panel.innerHTML=html+'<p style="color:var(--text-muted)">Obra não encontrada.</p>'; return; }
 
-      const itens = Array.isArray(obra.itens)?obra.itens:[];
-      const totalVC = itens.reduce((a,i)=>a+(Number(i.valorContrato)||0),0);
-      const totalAcum = itens.reduce((a,i)=>a+(Number(i.acumulado)||0),0);
-      const totalMed = itens.reduce((a,i)=>a+(Number(i.medicao)||0),0);
-      const pct = totalVC>0?(totalAcum/totalVC*100).toFixed(2):0;
-      const done = itens.filter(r=>Number(r.percentualExecutado)>=99.5).length;
+      const itens=Array.isArray(obra.itens)?obra.itens:[];
+      const totalVC=itens.reduce((a,i)=>a+(Number(i.valorContrato)||0),0);
+      const totalAcum=itens.reduce((a,i)=>a+(Number(i.acumulado)||0),0);
+      const totalMed=itens.reduce((a,i)=>a+(Number(i.medicao)||0),0);
+      const pct=totalVC>0?(totalAcum/totalVC*100).toFixed(2):0;
+      const done=itens.filter(r=>Number(r.percentualExecutado)>=99.5).length;
 
-      html += `
+      html+=`
       <div class="stats-grid" style="margin-bottom:1.5rem">
         <div class="stat-card"><span class="stat-label">Itens</span><span class="stat-value">${itens.length}</span></div>
         <div class="stat-card"><span class="stat-label">Concluídos</span><span class="stat-value" style="color:var(--success)">${done}</span></div>
@@ -213,8 +228,7 @@
             </tr></thead>
             <tbody>
               ${itens.map(r=>`<tr>
-                <td>${esc(r.item)}</td>
-                <td>${esc(r.descricao)}</td>
+                <td>${esc(r.item)}</td><td>${esc(r.descricao)}</td>
                 <td style="text-align:right">${fmtMoney(r.valorContrato)}</td>
                 <td style="text-align:right">${fmtMoney(r.medicao)}</td>
                 <td style="text-align:right">${fmtMoney(r.acumulado)}</td>
@@ -226,42 +240,23 @@
         </div>
       </div>`;
 
-      panel.innerHTML = html;
+      panel.innerHTML=html;
 
-      // desenha curva S
       requestAnimationFrame(()=>{
-        const canvas = $('adminCurvaS'); if(!canvas) return;
+        const canvas=$('adminCurvaS'); if(!canvas) return;
         if(adminChartInstance) adminChartInstance.destroy();
         const theme=document.documentElement.dataset.theme;
         const gc=theme==='dark'?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)';
         const tc=theme==='dark'?'#94a3b8':'#64748b';
-        adminChartInstance = new Chart(canvas.getContext('2d'),{
+        adminChartInstance=new Chart(canvas.getContext('2d'),{
           type:'bar',
-          data:{
-            labels:itens.map(r=>String(r.item||'')),
-            datasets:[{
-              label:'% Executado',
-              data:itens.map(r=>Number(r.percentualExecutado)||0),
-              backgroundColor:'rgba(99,102,241,0.2)',
-              borderColor:'#6366f1',
-              borderWidth:1,borderRadius:4
-            }]
-          },
-          options:{responsive:true,maintainAspectRatio:false,
-            scales:{
-              y:{beginAtZero:true,max:100,grid:{color:gc},ticks:{color:tc,callback:v=>v+'%'}},
-              x:{grid:{display:false},ticks:{color:tc}}
-            },
-            plugins:{legend:{labels:{color:tc}}}
-          }
+          data:{labels:itens.map(r=>String(r.item||'')),datasets:[{label:'% Executado',data:itens.map(r=>Number(r.percentualExecutado)||0),backgroundColor:'rgba(99,102,241,0.2)',borderColor:'#6366f1',borderWidth:1,borderRadius:4}]},
+          options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100,grid:{color:gc},ticks:{color:tc,callback:v=>v+'%'}},x:{grid:{display:false},ticks:{color:tc}}},plugins:{legend:{labels:{color:tc}}}}
         });
       });
     }
 
-    window.adminSelectObra = obraId => {
-      adminSelectedObraId = obraId || null;
-      renderAdminObraDetail();
-    };
+    window.adminSelectObra = obraId => { adminSelectedObraId=obraId||null; renderAdminObraDetail(); };
 
     function adminObraCardHTML(obra){
       const itens=Array.isArray(obra.itens)?obra.itens:[];
@@ -281,28 +276,20 @@
       </div>`;
     }
 
-    // ── stats gerais ──────────────────────────────────────────────────────────
     function renderAdminStats(){
-      let totalObras=0,totalItens=0,totalVC=0,totalAcum=0;
+      let tot=0,tit=0,tvc=0,tac=0;
       Object.values(allUsersData).forEach(u=>{
         if(u.role==='admin') return;
-        (u.obras||[]).forEach(o=>{
-          totalObras++;
-          const it=Array.isArray(o.itens)?o.itens:[];
-          totalItens+=it.length;
-          totalVC+=it.reduce((a,i)=>a+(Number(i.valorContrato)||0),0);
-          totalAcum+=it.reduce((a,i)=>a+(Number(i.acumulado)||0),0);
-        });
+        (u.obras||[]).forEach(o=>{tot++;const it=Array.isArray(o.itens)?o.itens:[];tit+=it.length;tvc+=it.reduce((a,i)=>a+(Number(i.valorContrato)||0),0);tac+=it.reduce((a,i)=>a+(Number(i.acumulado)||0),0);});
       });
-      const pctGeral=totalVC>0?(totalAcum/totalVC*100).toFixed(2):0;
+      const pg=tvc>0?(tac/tvc*100).toFixed(2):0;
       $('adminStats').innerHTML=`
-        <div class="stat-card"><span class="stat-label">Total de Obras</span><span class="stat-value">${totalObras}</span></div>
-        <div class="stat-card"><span class="stat-label">Total de Itens</span><span class="stat-value">${totalItens}</span></div>
-        <div class="stat-card"><span class="stat-label">% Geral</span><span class="stat-value">${pctGeral}%</span></div>
-        <div class="stat-card"><span class="stat-label">Acumulado Geral</span><span class="stat-value" style="font-size:1.1rem">${fmtMoney(totalAcum)}</span></div>`;
+        <div class="stat-card"><span class="stat-label">Total de Obras</span><span class="stat-value">${tot}</span></div>
+        <div class="stat-card"><span class="stat-label">Total de Itens</span><span class="stat-value">${tit}</span></div>
+        <div class="stat-card"><span class="stat-label">% Geral</span><span class="stat-value">${pg}%</span></div>
+        <div class="stat-card"><span class="stat-label">Acumulado Geral</span><span class="stat-value" style="font-size:1.1rem">${fmtMoney(tac)}</span></div>`;
     }
 
-    // ── lista de colabs (painel gerenciamento) ────────────────────────────────
     function renderColabList(){
       const box=$('colabList'); if(!box) return;
       const colabs=Object.entries(allUsersData).filter(([,u])=>u.role!=='admin');
@@ -314,44 +301,70 @@
         </div>`).join('');
     }
 
+    // ── FIX: cadastro sem duplo evento ───────────────────────────────────────
     function setupAdminColabForm(){
-      $('addColabForm').addEventListener('submit', async e=>{
+      const form=$('addColabForm');
+      form.addEventListener('submit', async e=>{
         e.preventDefault();
-        const nome=$('colabNome').value.trim(),email=$('colabEmail').value.trim(),senha=$('colabSenha').value;
-        const btn=$('addColabBtn');btn.disabled=true;btn.textContent='Cadastrando...';
+        const nome=$('colabNome').value.trim();
+        const email=$('colabEmail').value.trim();
+        const senha=$('colabSenha').value;
+        if(!nome||!email||!senha) return;
+        const btn=$('addColabBtn');
+        if(btn.disabled) return; // guard extra
+        btn.disabled=true; btn.textContent='Cadastrando...';
+        const msgEl=$('colabMsgError');
+        msgEl.style.display='none';
         try{
           const adminEmail=currentUser.email;
           const cred=await createUserWithEmailAndPassword(auth,email,senha);
-          await setDoc(doc(db,'users',cred.user.uid),{nome,email,role:'colaborador',criadoEm:Date.now()});
+          await setDoc(doc(db,'users',cred.user.uid),{nome,email,role:'colaborador',criadoEm:Date.now(),disabled:false});
           await signOut(auth);
           await signInWithEmailAndPassword(auth,adminEmail,ADMIN_SENHA);
-          $('colabNome').value='';$('colabEmail').value='';$('colabSenha').value='';
+          $('colabNome').value=''; $('colabEmail').value=''; $('colabSenha').value='';
           alert(`Colaborador "${nome}" cadastrado com sucesso!`);
-        }catch(err){alert('Erro ao cadastrar: '+err.message);}
-        finally{btn.disabled=false;btn.textContent='Cadastrar colaborador';}
+        }catch(err){
+          let msg='Erro ao cadastrar.';
+          if(err.code==='auth/email-already-in-use') msg='Este e-mail já está cadastrado no sistema.';
+          else if(err.code==='auth/weak-password') msg='A senha deve ter pelo menos 6 caracteres.';
+          else if(err.code==='auth/invalid-email') msg='E-mail inválido.';
+          else msg=err.message;
+          msgEl.textContent=msg; msgEl.style.display='block';
+        }finally{
+          btn.disabled=false; btn.textContent='Cadastrar colaborador';
+        }
       });
     }
 
+    // ── FIX: remoção — marca disabled no Firestore (não apaga do Auth) ───────
     window.removeColab = async uid=>{
-      if(!confirm('Remover este colaborador e todas as obras dele?')) return;
-      const oSnap=await getDocs(collection(db,'users',uid,'obras'));
-      for(const o of oSnap.docs) await deleteDoc(doc(db,'users',uid,'obras',o.id));
-      await deleteDoc(doc(db,'users',uid));
-      delete allUsersData[uid];
-      if(adminUnsubMap[uid]){adminUnsubMap[uid]();delete adminUnsubMap[uid];}
-      if(adminSelectedUid===uid){adminSelectedUid=null;adminSelectedObraId=null;}
-      renderAdminStats();renderAdminColabSidebar();renderColabList();renderAdminObraDetail();
+      if(!confirm('Desativar este colaborador? Ele perderá acesso mas os dados ficam preservados.')) return;
+      try{
+        // marca como desativado no Firestore (não afeta o outro usuário)
+        await updateDoc(doc(db,'users',uid),{disabled:true});
+        // limpa state local
+        delete allUsersData[uid];
+        if(adminUnsubMap[uid]){adminUnsubMap[uid]();delete adminUnsubMap[uid];}
+        if(adminSelectedUid===uid){adminSelectedUid=null;adminSelectedObraId=null;}
+        renderAdminStats(); renderAdminColabSidebar(); renderColabList(); renderAdminObraDetail();
+        alert('Colaborador desativado com sucesso.');
+      }catch(err){ alert('Erro ao remover: '+err.message); }
     };
-
-    $('adminToggleColab').addEventListener('click',()=>{const p=$('adminColabPanel');p.style.display=p.style.display==='none'?'block':'none';});
 
     // ════════════════════════════════════════════════════════════════════════
     //  COLABORADOR VIEW
     // ════════════════════════════════════════════════════════════════════════
     function initUserView(){
-      showView('appView');
-      obras=[];selectedObraId=null;rows=[];
-      listenUserObras();
+      // ── FIX: bloqueia acesso se disabled ─────────────────────────────────
+      getDoc(doc(db,'users',currentUser.uid)).then(snap=>{
+        if(snap.exists()&&snap.data().disabled===true){
+          alert('Sua conta foi desativada. Entre em contato com o administrador.');
+          cleanupListeners(); signOut(auth); return;
+        }
+        showView('appView');
+        obras=[];selectedObraId=null;rows=[];
+        listenUserObras();
+      });
     }
 
     function listenUserObras(){
@@ -439,7 +452,7 @@
       };input.click();
     }
 
-    // ── eventos tabela colaborador ────────────────────────────────────────────
+    // ── eventos tabela ────────────────────────────────────────────────────────
     let saveTimeout=null;
     function scheduleSave(){clearTimeout(saveTimeout);saveTimeout=setTimeout(async()=>{const o=currentObra();if(o){o.itens=rows;await saveObraFirestore(o);}},1000);}
 
@@ -473,7 +486,6 @@
     .logo{width:48px;height:48px;background:linear-gradient(135deg,var(--primary),#818cf8);color:#fff;border-radius:var(--radius-md);display:grid;place-items:center;font-weight:900;font-size:1.25rem;box-shadow:var(--shadow-md)}
     .logo-large{width:64px;height:64px;font-size:1.5rem}
     .brand-text h1{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}.brand-text p{color:var(--text-muted);font-size:.875rem}
-    /* admin layout */
     .admin-layout{display:grid;grid-template-columns:220px 1fr;gap:1.5rem;align-items:start}
     @media(max-width:900px){.admin-layout{grid-template-columns:1fr}}
     .admin-sidebar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1rem;position:sticky;top:1.5rem}
@@ -481,7 +493,6 @@
     .colab-sidebar-item{padding:.75rem;border-radius:var(--radius-sm);cursor:pointer;border:1px solid transparent;margin-bottom:.375rem;transition:.15s}
     .colab-sidebar-item:hover{background:var(--surface-hover)}
     .colab-sidebar-item.active{background:rgba(99,102,241,.1);border-color:var(--primary);color:var(--primary)}
-    /* colaborador layout */
     .dashboard{display:grid;grid-template-columns:260px 1fr;gap:2rem}@media(max-width:1024px){.dashboard{grid-template-columns:1fr}}
     .panel{background:var(--surface);border-radius:var(--radius-lg);border:1px solid var(--border);box-shadow:var(--shadow-sm);padding:1.5rem;margin-bottom:1.5rem}
     .nav{display:flex;flex-direction:column;gap:.5rem;position:sticky;top:2rem}
@@ -505,7 +516,7 @@
     tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--surface-hover)}
     td[contenteditable="true"]{outline:none;cursor:text}td[contenteditable="true"]:focus{background:var(--bg);box-shadow:inset 0 0 0 2px var(--primary);border-radius:4px}
     .flex-between{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem}.mt-4{margin-top:1rem}.mb-4{margin-bottom:1rem}
-    .error-msg{color:var(--danger);font-size:.875rem;margin-top:.5rem;display:none}
+    .error-msg{color:var(--danger);font-size:.875rem;margin-top:.5rem;display:none;padding:.5rem;background:rgba(239,68,68,.08);border-radius:var(--radius-sm)}
     .obra-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;margin-bottom:1rem;box-shadow:var(--shadow-sm)}
     .obra-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.75rem}
     .obra-card-title{font-weight:700;font-size:1rem}
@@ -557,7 +568,8 @@
             <div class="form-group"><label>Nome</label><input type="text" id="colabNome" class="form-control" placeholder="Ex.: João Silva" required></div>
             <div class="form-group"><label>E-mail</label><input type="email" id="colabEmail" class="form-control" placeholder="joao@email.com" required></div>
             <div class="form-group"><label>Senha</label><input type="password" id="colabSenha" class="form-control" placeholder="mínimo 6 caracteres" minlength="6" required></div>
-            <button type="submit" class="btn btn-primary" id="addColabBtn" style="width:100%">Cadastrar colaborador</button>
+            <div id="colabMsgError" class="error-msg"></div>
+            <button type="submit" class="btn btn-primary" id="addColabBtn" style="width:100%;margin-top:.5rem">Cadastrar colaborador</button>
           </form>
         </div>
         <div>
@@ -567,10 +579,8 @@
       </div>
     </div>
 
-    <!-- stats gerais -->
     <div class="stats-grid" id="adminStats"></div>
 
-    <!-- layout principal admin: sidebar colabs + detalhe -->
     <div class="admin-layout">
       <div class="admin-sidebar">
         <h3>Colaboradores</h3>
