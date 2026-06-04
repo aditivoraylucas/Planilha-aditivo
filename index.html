@@ -35,14 +35,10 @@
     function norm(v){ return String(v??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
     const isNum = v => v!=='' && !isNaN(Number(v)) && isFinite(Number(v));
 
-    // ── helper: calcula % geral sempre pelos valores do cabeçalho ──
-    // acumuladoTotal ÷ valorContratoAditivo × 100
-    // fallback para soma dos itens caso não tenha cabeçalho
     function calcPctGeral(resumo, itens){
       const vca = Number(resumo?.valorContratoAditivo) || 0;
       const acu = Number(resumo?.acumuladoTotal)       || 0;
       if(vca > 0 && acu > 0) return +(acu / vca * 100).toFixed(2);
-      // fallback: soma dos itens
       const tvc = (itens||[]).reduce((a,i)=>a+(Number(i.valorContrato)||0),0);
       const tac = (itens||[]).reduce((a,i)=>a+(Number(i.acumulado)||0),0);
       return tvc > 0 ? +(tac / tvc * 100).toFixed(2) : 0;
@@ -209,19 +205,18 @@
       const totalMed  = itens.reduce((a,i)=>a+(Number(i.medicao)||0),0);
       const vcAditivo = Number(obra.resumo?.valorContratoAditivo) || totalVC;
       const acumTotal = Number(obra.resumo?.acumuladoTotal)       || totalAcum;
-      // % Geral = acumulado do cabeçalho ÷ valor contrato do cabeçalho
       const pct = calcPctGeral(obra.resumo, itens);
 
       html+=`
-      <div class="stats-grid" style="margin-bottom:1.5rem">
-        <div class="stat-card"><span class="stat-label">Valor CT / Aditivo</span><span class="stat-value" style="font-size:1rem">${fmtMoney(vcAditivo)}</span></div>
-        <div class="stat-card"><span class="stat-label">Acumulado Total</span><span class="stat-value" style="font-size:1rem;color:var(--success)">${fmtMoney(acumTotal)}</span></div>
-        <div class="stat-card"><span class="stat-label">% Geral</span><span class="stat-value">${pct.toFixed(2)}%</span></div>
-        <div class="stat-card"><span class="stat-label">Medição Atual</span><span class="stat-value" style="font-size:1.1rem">${esc(obra.medicaoAtual||'-')}</span></div>
-        <div class="stat-card"><span class="stat-label">Valor Contrato (itens)</span><span class="stat-value" style="font-size:1rem">${fmtMoney(totalVC)}</span></div>
-        <div class="stat-card"><span class="stat-label">Acumulado (itens)</span><span class="stat-value" style="font-size:1rem">${fmtMoney(totalAcum)}</span></div>
-        <div class="stat-card"><span class="stat-label">Medição</span><span class="stat-value" style="font-size:1rem">${fmtMoney(totalMed)}</span></div>
-        <div class="stat-card"><span class="stat-label">Saldo</span><span class="stat-value" style="font-size:1rem">${fmtMoney(vcAditivo-acumTotal)}</span></div>
+      <div class="admin-stats-grid">
+        <div class="stat-card compact"><span class="stat-label">Valor CT / Aditivo</span><span class="stat-value">${fmtMoney(vcAditivo)}</span></div>
+        <div class="stat-card compact"><span class="stat-label">Acumulado Total</span><span class="stat-value" style="color:var(--success)">${fmtMoney(acumTotal)}</span></div>
+        <div class="stat-card compact"><span class="stat-label">% Geral</span><span class="stat-value">${pct.toFixed(2)}%</span></div>
+        <div class="stat-card compact"><span class="stat-label">Medição Atual</span><span class="stat-value">${esc(obra.medicaoAtual||'-')}</span></div>
+        <div class="stat-card compact"><span class="stat-label">Valor Contrato (itens)</span><span class="stat-value">${fmtMoney(totalVC)}</span></div>
+        <div class="stat-card compact"><span class="stat-label">Acumulado (itens)</span><span class="stat-value">${fmtMoney(totalAcum)}</span></div>
+        <div class="stat-card compact"><span class="stat-label">Medição</span><span class="stat-value">${fmtMoney(totalMed)}</span></div>
+        <div class="stat-card compact"><span class="stat-label">Saldo</span><span class="stat-value">${fmtMoney(vcAditivo-acumTotal)}</span></div>
       </div>
       <div class="panel" style="margin-bottom:1.5rem">
         <h3 style="margin-bottom:1rem">Curva S — Progresso Físico</h3>
@@ -244,7 +239,9 @@
             <td style="text-align:right">${fmtMoney(r.medicao)}</td>
             <td style="text-align:right">${fmtMoney(r.acumulado)}</td>
             <td style="text-align:right">${fmtMoney(r.saldo)}</td>
-            <td style="text-align:right;font-weight:700;color:${Number(r.percentualExecutado)>=99.5?'var(--success)':'var(--text)'}">${Number(r.percentualExecutado||0).toFixed(2)}%</td>
+            <td style="text-align:right;font-weight:700;color:${Number(r.percentualExecutado)>=99.5?'var(--success)':'var(--text)'}">
+              ${Number(r.percentualExecutado||0).toFixed(2)}%
+            </td>
           </tr>`).join('')}</tbody>
           </table>
         </div>
@@ -271,7 +268,6 @@
       const itens     = Array.isArray(obra.itens) ? obra.itens : [];
       const vcAditivo = Number(obra.resumo?.valorContratoAditivo) || itens.reduce((a,i)=>a+(Number(i.valorContrato)||0),0);
       const acumTotal = Number(obra.resumo?.acumuladoTotal)       || itens.reduce((a,i)=>a+(Number(i.acumulado)||0),0);
-      // % = acumulado do cabeçalho ÷ valor contrato do cabeçalho
       const pct = calcPctGeral(obra.resumo, itens);
       return `<div class="obra-card" style="cursor:pointer" onclick="adminSelectObra('${obra.id}')">
         <div class="obra-card-header">
@@ -477,7 +473,6 @@
       const o = currentObra();
       const vcAditivo = Number(o?.resumo?.valorContratoAditivo) || rows.reduce((a,r)=>a+(Number(r.valorContrato)||0),0);
       const acumTotal = Number(o?.resumo?.acumuladoTotal)       || rows.reduce((a,r)=>a+(Number(r.acumulado)||0),0);
-      // % Geral = acumuladoTotal (cabeçalho) ÷ valorContratoAditivo (cabeçalho)
       const pct = calcPctGeral(o?.resumo, rows);
       $('stats').innerHTML=`
         <div class="stat-card">
@@ -506,14 +501,6 @@
 
     function normalizeImportedRows(list){if(!Array.isArray(list))return[];return list.map(item=>({item:item?.item??'',descricao:item?.descricao??item?.descricaoServico??item?.name??'',valorContrato:Number(item?.valorContrato??item?.valor_contrato??0)||0,medicao:Number(item?.medicao??0)||0,acumulado:Number(item?.acumulado??0)||0,saldo:Number(item?.saldo??0)||0,percentualExecutado:Number(item?.percentualExecutado??item?.percentual_executado??0)||0}));}
 
-    // ─────────────────────────────────────────────────────────────────────
-    // REGRA 1 — Busca "Valor CT / TA" (e variações) no cabeçalho.
-    //   1a. Próximas colunas da MESMA linha (até 8 à frente), v > 10000
-    //   1b. Linha ABAIXO, col até col+6, v > 10000  (7ª CIA: label col 7,
-    //       valor col 8 da linha seguinte)
-    // REGRA 2 — Busca label "Acumulado" no cabeçalho.
-    //   2a. Linha abaixo, col até col+3, v > 10000
-    // ─────────────────────────────────────────────────────────────────────
     const RE_VCA = /valor\s*(ct|contrato)\s*[\/\-]?\s*(ta|aditiv|reajust|atualiz)?/i;
     const RE_ACUM_LABEL = /^acumulado$/i;
 
@@ -525,14 +512,11 @@
         const row = headerRows[r] || [];
         for(let c=0; c<row.length; c++){
           const cell = String(row[c]??'').trim();
-
-          // Regra 1a: mesma linha, próximas 8 colunas, v > 10000
           if(!valorContratoAditivo && RE_VCA.test(cell)){
             for(let cc=c+1; cc<Math.min(c+9, row.length); cc++){
               const v = Number(row[cc]);
               if(v > 10000){ valorContratoAditivo = v; break; }
             }
-            // Regra 1b: linha abaixo, col até col+6, v > 10000
             if(!valorContratoAditivo){
               const nr = headerRows[r+1] || [];
               for(let cc=c; cc<Math.min(c+7, nr.length); cc++){
@@ -541,8 +525,6 @@
               }
             }
           }
-
-          // Regra 2: linha abaixo, col até col+3, v > 10000
           if(!acumuladoTotal && RE_ACUM_LABEL.test(cell)){
             const nr = headerRows[r+1] || [];
             for(let cc=c; cc<Math.min(c+4, nr.length); cc++){
@@ -594,7 +576,6 @@
         resumo:{
           total: st,
           acumulado: sa,
-          // percentual calculado pelos valores do cabeçalho — fonte única de verdade
           percentual: vca > 0 ? +(acu/vca*100).toFixed(2) : 0,
           valorContratoAditivo: vca,
           acumuladoTotal: acu
@@ -657,14 +638,45 @@
     .logo{width:48px;height:48px;background:linear-gradient(135deg,var(--primary),#818cf8);color:#fff;border-radius:var(--radius-md);display:grid;place-items:center;font-weight:900;font-size:1.25rem;box-shadow:var(--shadow-md)}
     .logo-large{width:64px;height:64px;font-size:1.5rem}
     .brand-text h1{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}.brand-text p{color:var(--text-muted);font-size:.875rem}
+
+    /* ── Admin layout ── */
     .admin-layout{display:grid;grid-template-columns:220px 1fr;gap:1.5rem;align-items:start}
-    @media(max-width:900px){.admin-layout{grid-template-columns:1fr}}
     .admin-sidebar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1rem;position:sticky;top:1.5rem}
     .admin-sidebar h3{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:.75rem}
     .colab-sidebar-item{padding:.75rem;border-radius:var(--radius-sm);cursor:pointer;border:1px solid transparent;margin-bottom:.375rem;transition:.15s}
     .colab-sidebar-item:hover{background:var(--surface-hover)}
     .colab-sidebar-item.active{background:rgba(99,102,241,.1);border-color:var(--primary);color:var(--primary)}
-    .dashboard{display:grid;grid-template-columns:260px 1fr;gap:2rem}@media(max-width:1024px){.dashboard{grid-template-columns:1fr}}
+
+    /* ── Cards 4x2 admin ── */
+    .admin-stats-grid{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0, 1fr));
+      gap:1rem;
+      margin-bottom:1.5rem;
+    }
+    .stat-card.compact{
+      min-height:100px;
+      padding:1rem 1.1rem;
+      justify-content:space-between;
+    }
+    .stat-card.compact .stat-value{
+      font-size:1.2rem;
+      line-height:1.1;
+    }
+    .stat-card.compact .stat-label{
+      font-size:.75rem;
+      font-weight:600;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }
+
+    /* ── Grid stats geral ── */
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:1.5rem}
+    .stat-card{background:var(--surface);padding:1.25rem;border-radius:var(--radius-lg);border:1px solid var(--border);display:flex;flex-direction:column;gap:.25rem;box-shadow:var(--shadow-sm)}
+    .stat-value{font-size:2rem;font-weight:900;line-height:1;color:var(--text)}.stat-label{font-size:.875rem;color:var(--text-muted);font-weight:500}
+
+    /* ── Dashboard colaborador ── */
+    .dashboard{display:grid;grid-template-columns:260px 1fr;gap:2rem}
     .panel{background:var(--surface);border-radius:var(--radius-lg);border:1px solid var(--border);box-shadow:var(--shadow-sm);padding:1.5rem;margin-bottom:1.5rem}
     .nav{display:flex;flex-direction:column;gap:.5rem;position:sticky;top:2rem}
     .nav-item{display:flex;justify-content:space-between;padding:.75rem 1rem;border-radius:var(--radius-sm);font-weight:500;color:var(--text-muted)}
@@ -676,13 +688,12 @@
     .form-group label{font-size:.8125rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
     .form-control{padding:.625rem .875rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:.875rem;transition:.2s;outline:none;width:100%}
     .form-control:focus{border-color:var(--border-focus);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:var(--surface)}
-    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:1.5rem}
-    .stat-card{background:var(--surface);padding:1.25rem;border-radius:var(--radius-lg);border:1px solid var(--border);display:flex;flex-direction:column;gap:.25rem}
-    .stat-value{font-size:2rem;font-weight:900;line-height:1;color:var(--text)}.stat-label{font-size:.875rem;color:var(--text-muted);font-weight:500}
     .chart-container{height:280px;width:100%;position:relative}
-    .table-container{overflow-x:auto;margin-top:1rem}
-    table{width:100%;border-collapse:separate;border-spacing:0}
-    th{text-align:left;padding:1rem;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);border-bottom:1px solid var(--border);background:rgba(0,0,0,.02)}
+
+    /* ── Tabela ── */
+    .table-container{overflow-x:auto;margin-top:1rem;-webkit-overflow-scrolling:touch;border-radius:var(--radius-md)}
+    table{width:100%;border-collapse:separate;border-spacing:0;min-width:780px}
+    th{text-align:left;padding:1rem;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);border-bottom:1px solid var(--border);background:rgba(0,0,0,.02);position:sticky;top:0;z-index:1}
     td{padding:1rem;font-size:.875rem;border-bottom:1px solid var(--border);transition:background .2s}
     tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--surface-hover)}
     td[contenteditable="true"]{outline:none;cursor:text}td[contenteditable="true"]:focus{background:var(--bg);box-shadow:inset 0 0 0 2px var(--primary);border-radius:4px}
@@ -697,6 +708,49 @@
     .obra-progress-fill{height:100%;background:var(--primary);border-radius:999px;transition:width .4s}
     .obra-card-footer{display:flex;gap:1.5rem;flex-wrap:wrap;font-size:.8125rem;color:var(--text-muted)}
     .colab-item{display:flex;justify-content:space-between;align-items:center;padding:.75rem;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:.5rem;background:var(--bg);gap:.5rem;flex-wrap:wrap}
+
+    /* ══════════════════════════════════════════
+       RESPONSIVO — tablet (≤ 1100px)
+    ══════════════════════════════════════════ */
+    @media(max-width:1100px){
+      .admin-layout{grid-template-columns:1fr}
+      .admin-sidebar{position:static}
+      .admin-stats-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
+      .dashboard{grid-template-columns:1fr}
+    }
+
+    /* ══════════════════════════════════════════
+       RESPONSIVO — mobile (≤ 640px)
+    ══════════════════════════════════════════ */
+    @media(max-width:640px){
+      .container{padding:1rem}
+      .header{margin-bottom:1.25rem}
+      .header .brand-text h1{font-size:1.15rem}
+      .header div[style*="flex"]{gap:.35rem}
+      .btn{padding:.5rem .85rem;font-size:.8rem}
+
+      .admin-stats-grid{
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+        gap:.75rem;
+        margin-bottom:1rem;
+      }
+      .stat-card.compact{min-height:88px;padding:.85rem}
+      .stat-card.compact .stat-value{font-size:1rem}
+      .stat-card.compact .stat-label{font-size:.7rem}
+
+      .stats-grid{grid-template-columns:repeat(2, minmax(0, 1fr));gap:.75rem}
+      .stat-value{font-size:1.4rem}
+
+      .panel{padding:1rem;margin-bottom:1rem}
+      .obra-card{padding:1rem}
+      .obra-card-pct{font-size:1.2rem}
+      .obra-card-footer{gap:.75rem;font-size:.75rem}
+
+      table{min-width:700px}
+      th,td{padding:.75rem .65rem;font-size:.78rem;white-space:nowrap}
+
+      .admin-colabpanel-grid{grid-template-columns:1fr !important}
+    }
   </style>
 </head>
 <body>
@@ -731,7 +785,7 @@
 
     <div id="adminColabPanel" class="panel" style="display:none">
       <div class="flex-between mb-4"><h2>👥 Gerenciar Colaboradores</h2></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem">
+      <div class="admin-colabpanel-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:2rem">
         <div>
           <h3 style="font-size:.9rem;margin-bottom:.5rem;color:var(--text-muted)">CADASTRAR / REATIVAR COLABORADOR</h3>
           <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:1rem">Para reativar um colaborador removido, informe o mesmo e-mail e defina uma nova senha.</p>
