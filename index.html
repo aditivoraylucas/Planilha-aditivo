@@ -10,7 +10,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, deleteDoc, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
     const firebaseConfig = {
@@ -29,14 +29,12 @@
     const ADMIN_EMAIL = "obras@admin.com";
     const ADMIN_SENHA = "35343535";
 
-    // ── helpers ───────────────────────────────────────────────────────────────
     const fmtMoney = v => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v)||0);
     const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const fileBaseName = n => String(n||'').replace(/\.[^.]+$/,'');
     function norm(v){ return String(v??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
     const isNum = v => v!=='' && !isNaN(Number(v)) && isFinite(Number(v));
 
-    // ── state ─────────────────────────────────────────────────────────────────
     let currentUser = null, isAdmin = false;
     let unsubObras = null, unsubAllObras = null;
     let obras = [], selectedObraId = null, rows = [], sourceContrato = null;
@@ -44,7 +42,6 @@
     let allUsersData = {};
     let adminUnsubMap = {};
     let adminSelectedUid = null, adminSelectedObraId = null;
-    // ── flag anti-duplo submit ────────────────────────────────────────────────
     let colabFormReady = false;
 
     const $ = id => document.getElementById(id);
@@ -53,9 +50,6 @@
       $(name).style.display = name==='loginView' ? 'flex' : 'block';
     }
 
-    // ════════════════════════════════════════════════════════════════════════
-    //  AUTH
-    // ════════════════════════════════════════════════════════════════════════
     onAuthStateChanged(auth, async user => {
       currentUser = user;
       if(!user){ showView('loginView'); return; }
@@ -98,7 +92,6 @@
     function initAdminView(){
       showView('adminView');
       listenAllUsers();
-      // ── FIX: registra o form só uma vez ──────────────────────────────────
       if(!colabFormReady){
         colabFormReady = true;
         setupAdminColabForm();
@@ -115,7 +108,6 @@
         snap.docChanges().forEach(change => {
           const d = change.doc;
           const data = d.data();
-          // ignora usuários desativados
           if(data.disabled){
             if(allUsersData[d.id]){
               delete allUsersData[d.id];
@@ -147,7 +139,6 @@
       });
     }
 
-    // ── sidebar colaboradores ────────────────────────────────────────────────
     function renderAdminColabSidebar(){
       const box=$('adminColabSidebar'); if(!box) return;
       const colabs=Object.entries(allUsersData).filter(([,u])=>u.role!=='admin');
@@ -166,7 +157,6 @@
       renderAdminColabSidebar(); renderAdminObraDetail();
     };
 
-    // ── detalhe obra admin ───────────────────────────────────────────────────
     function renderAdminObraDetail(){
       const panel=$('adminDetailPanel'); if(!panel) return;
       if(!adminSelectedUid){ panel.innerHTML='<p style="color:var(--text-muted);padding:1rem">Selecione um colaborador ao lado para ver as obras.</p>'; return; }
@@ -233,7 +223,7 @@
                 <td style="text-align:right">${fmtMoney(r.medicao)}</td>
                 <td style="text-align:right">${fmtMoney(r.acumulado)}</td>
                 <td style="text-align:right">${fmtMoney(r.saldo)}</td>
-                <td style="text-align:right;font-weight:700;color:${Number(r.percentualExecutado)>=99.5?'var(--success)':'var(--text)'}">${Number(r.percentualExecutado||0).toFixed(2)}%</td>
+                <td style="text-align:right;font-weight:700;color:${Number(r.percentualExecutado)>=99.5?'var(--success)':'var(--text)'}"> ${Number(r.percentualExecutado||0).toFixed(2)}%</td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -301,22 +291,22 @@
         </div>`).join('');
     }
 
-    // ── FIX: cadastro sem duplo evento ───────────────────────────────────────
+    // ── CADASTRO: cria novo OU reativa conta existente com nova senha ─────────
     function setupAdminColabForm(){
-      const form=$('addColabForm');
-      form.addEventListener('submit', async e=>{
+      $('addColabForm').addEventListener('submit', async e=>{
         e.preventDefault();
         const nome=$('colabNome').value.trim();
         const email=$('colabEmail').value.trim();
         const senha=$('colabSenha').value;
         if(!nome||!email||!senha) return;
         const btn=$('addColabBtn');
-        if(btn.disabled) return; // guard extra
+        if(btn.disabled) return;
         btn.disabled=true; btn.textContent='Cadastrando...';
         const msgEl=$('colabMsgError');
         msgEl.style.display='none';
+        const adminEmail=currentUser.email;
         try{
-          const adminEmail=currentUser.email;
+          // Tenta criar normalmente
           const cred=await createUserWithEmailAndPassword(auth,email,senha);
           await setDoc(doc(db,'users',cred.user.uid),{nome,email,role:'colaborador',criadoEm:Date.now(),disabled:false});
           await signOut(auth);
@@ -324,30 +314,54 @@
           $('colabNome').value=''; $('colabEmail').value=''; $('colabSenha').value='';
           alert(`Colaborador "${nome}" cadastrado com sucesso!`);
         }catch(err){
-          let msg='Erro ao cadastrar.';
-          if(err.code==='auth/email-already-in-use') msg='Este e-mail já está cadastrado no sistema.';
-          else if(err.code==='auth/weak-password') msg='A senha deve ter pelo menos 6 caracteres.';
-          else if(err.code==='auth/invalid-email') msg='E-mail inválido.';
-          else msg=err.message;
-          msgEl.textContent=msg; msgEl.style.display='block';
+          if(err.code==='auth/email-already-in-use'){
+            // E-mail existe no Auth → faz login com ele e reativa
+            try{
+              const reativCred = await signInWithEmailAndPassword(auth, email, senha);
+              // Atualiza o doc Firestore: reativa e atualiza nome
+              await setDoc(doc(db,'users',reativCred.user.uid),{nome,email,role:'colaborador',criadoEm:Date.now(),disabled:false},{merge:true});
+              await signOut(auth);
+              await signInWithEmailAndPassword(auth,adminEmail,ADMIN_SENHA);
+              $('colabNome').value=''; $('colabEmail').value=''; $('colabSenha').value='';
+              alert(`Colaborador "${nome}" reativado com sucesso!`);
+            }catch(err2){
+              // Login falhou — senha diferente da original
+              let msg='';
+              if(err2.code==='auth/wrong-password'||err2.code==='auth/invalid-credential'){
+                msg='Este e-mail já existe no sistema com outra senha. Use a senha original para reativar, ou cadastre com outro e-mail.';
+              } else {
+                msg='Erro ao reativar: '+err2.message;
+              }
+              // Garante que o admin ainda está logado
+              try{ await signInWithEmailAndPassword(auth,adminEmail,ADMIN_SENHA); }catch(_){}
+              msgEl.textContent=msg; msgEl.style.display='block';
+            }
+          } else if(err.code==='auth/weak-password'){
+            msgEl.textContent='A senha deve ter pelo menos 6 caracteres.';
+            msgEl.style.display='block';
+          } else if(err.code==='auth/invalid-email'){
+            msgEl.textContent='E-mail inválido.';
+            msgEl.style.display='block';
+          } else {
+            msgEl.textContent=err.message;
+            msgEl.style.display='block';
+          }
         }finally{
           btn.disabled=false; btn.textContent='Cadastrar colaborador';
         }
       });
     }
 
-    // ── FIX: remoção — marca disabled no Firestore (não apaga do Auth) ───────
+    // ── REMOÇÃO: marca disabled no Firestore ─────────────────────────────────
     window.removeColab = async uid=>{
-      if(!confirm('Desativar este colaborador? Ele perderá acesso mas os dados ficam preservados.')) return;
+      if(!confirm('Remover este colaborador? Ele perderá acesso ao sistema.')) return;
       try{
-        // marca como desativado no Firestore (não afeta o outro usuário)
         await updateDoc(doc(db,'users',uid),{disabled:true});
-        // limpa state local
         delete allUsersData[uid];
         if(adminUnsubMap[uid]){adminUnsubMap[uid]();delete adminUnsubMap[uid];}
         if(adminSelectedUid===uid){adminSelectedUid=null;adminSelectedObraId=null;}
         renderAdminStats(); renderAdminColabSidebar(); renderColabList(); renderAdminObraDetail();
-        alert('Colaborador desativado com sucesso.');
+        alert('Colaborador removido com sucesso.');
       }catch(err){ alert('Erro ao remover: '+err.message); }
     };
 
@@ -355,7 +369,6 @@
     //  COLABORADOR VIEW
     // ════════════════════════════════════════════════════════════════════════
     function initUserView(){
-      // ── FIX: bloqueia acesso se disabled ─────────────────────────────────
       getDoc(doc(db,'users',currentUser.uid)).then(snap=>{
         if(snap.exists()&&snap.data().disabled===true){
           alert('Sua conta foi desativada. Entre em contato com o administrador.');
@@ -400,7 +413,6 @@
 
     function renderAll(){renderObrasBox();renderTable();updateDashboard();}
 
-    // ── Excel import ──────────────────────────────────────────────────────────
     function normalizeImportedRows(list){if(!Array.isArray(list))return[];return list.map(item=>({item:item?.item??'',descricao:item?.descricao??item?.descricaoServico??item?.name??'',valorContrato:Number(item?.valorContrato??item?.valor_contrato??0)||0,medicao:Number(item?.medicao??0)||0,acumulado:Number(item?.acumulado??0)||0,saldo:Number(item?.saldo??0)||0,percentualExecutado:Number(item?.percentualExecutado??item?.percentual_executado??0)||0}));}
 
     async function readExcelFile(file){
@@ -452,7 +464,6 @@
       };input.click();
     }
 
-    // ── eventos tabela ────────────────────────────────────────────────────────
     let saveTimeout=null;
     function scheduleSave(){clearTimeout(saveTimeout);saveTimeout=setTimeout(async()=>{const o=currentObra();if(o){o.itens=rows;await saveObraFirestore(o);}},1000);}
 
@@ -558,12 +569,12 @@
       </div>
     </header>
 
-    <!-- painel gerenciar colaboradores -->
     <div id="adminColabPanel" class="panel" style="display:none">
       <div class="flex-between mb-4"><h2>👥 Gerenciar Colaboradores</h2></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;flex-wrap:wrap">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem">
         <div>
-          <h3 style="font-size:.9rem;margin-bottom:1rem;color:var(--text-muted)">CADASTRAR NOVO COLABORADOR</h3>
+          <h3 style="font-size:.9rem;margin-bottom:1rem;color:var(--text-muted)">CADASTRAR / REATIVAR COLABORADOR</h3>
+          <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:1rem">Para reativar um e-mail removido, informe o mesmo e-mail com a senha original.</p>
           <form id="addColabForm">
             <div class="form-group"><label>Nome</label><input type="text" id="colabNome" class="form-control" placeholder="Ex.: João Silva" required></div>
             <div class="form-group"><label>E-mail</label><input type="email" id="colabEmail" class="form-control" placeholder="joao@email.com" required></div>
