@@ -508,10 +508,11 @@
 
     // ─────────────────────────────────────────────────────────────────────
     // REGRA 1 — Busca "Valor CT / TA" (e variações) no cabeçalho.
-    //           Valor: próximas colunas na mesma linha (até 6 à frente) OU
-    //                  linha imediatamente abaixo na mesma coluna.
+    //   1a. Próximas colunas da MESMA linha (até 8 à frente), v > 10000
+    //   1b. Linha ABAIXO, col até col+6, v > 10000  (7ª CIA: label col 7,
+    //       valor col 8 da linha seguinte)
     // REGRA 2 — Busca label "Acumulado" no cabeçalho.
-    //           Valor: linha imediatamente abaixo, mesma coluna (apenas se > 0).
+    //   2a. Linha abaixo, col até col+3, v > 10000
     // ─────────────────────────────────────────────────────────────────────
     const RE_VCA = /valor\s*(ct|contrato)\s*[\/\-]?\s*(ta|aditiv|reajust|atualiz)?/i;
     const RE_ACUM_LABEL = /^acumulado$/i;
@@ -525,25 +526,29 @@
         for(let c=0; c<row.length; c++){
           const cell = String(row[c]??'').trim();
 
-          // Regra 1: Valor CT / TA
+          // Regra 1a: mesma linha, próximas 8 colunas, v > 10000
           if(!valorContratoAditivo && RE_VCA.test(cell)){
-            // Tenta nas próximas colunas da mesma linha
-            for(let cc=c+1; cc<Math.min(c+7, row.length); cc++){
+            for(let cc=c+1; cc<Math.min(c+9, row.length); cc++){
               const v = Number(row[cc]);
-              if(v > 0){ valorContratoAditivo = v; break; }
+              if(v > 10000){ valorContratoAditivo = v; break; }
             }
-            // Fallback: linha de baixo, mesma coluna
+            // Regra 1b: linha abaixo, col até col+6, v > 10000
             if(!valorContratoAditivo){
-              const v = Number((headerRows[r+1] || [])[c]);
-              if(v > 0) valorContratoAditivo = v;
+              const nr = headerRows[r+1] || [];
+              for(let cc=c; cc<Math.min(c+7, nr.length); cc++){
+                const v = Number(nr[cc]);
+                if(v > 10000){ valorContratoAditivo = v; break; }
+              }
             }
           }
 
-          // Regra 2: Acumulado
+          // Regra 2: linha abaixo, col até col+3, v > 10000
           if(!acumuladoTotal && RE_ACUM_LABEL.test(cell)){
-            const nextRow = headerRows[r+1] || [];
-            const v = Number(nextRow[c]);
-            if(v > 0){ acumuladoTotal = v; }
+            const nr = headerRows[r+1] || [];
+            for(let cc=c; cc<Math.min(c+4, nr.length); cc++){
+              const v = Number(nr[cc]);
+              if(v > 10000){ acumuladoTotal = v; break; }
+            }
           }
         }
       }
