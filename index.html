@@ -1,236 +1,506 @@
 <!DOCTYPE html>
 <html lang="pt-BR" data-theme="light">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Cronograma PRO</title>
   <link rel="preconnect" href="https://api.fontshare.com">
   <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-  <style>
-    :root { --bg:#f7f9fc; --surface:#fff; --surface-hover:#f1f5f9; --text:#0f172a; --text-muted:#64748b; --border:rgba(15,23,42,.1); --border-focus:#6366f1; --primary:#4f46e5; --primary-hover:#4338ca; --success:#10b981; --danger:#ef4444; --radius-sm:.5rem; --radius-md:.75rem; --radius-lg:1rem; --shadow-sm:0 1px 2px rgba(0,0,0,.05); --shadow-md:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -1px rgba(0,0,0,.06); --shadow-lg:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -2px rgba(0,0,0,.05); --font:'Satoshi',system-ui,sans-serif; }
-    [data-theme="dark"] { --bg:#0f172a; --surface:#1e293b; --surface-hover:#334155; --text:#f8fafc; --text-muted:#94a3b8; --border:rgba(255,255,255,.1); --border-focus:#818cf8; --primary:#6366f1; --primary-hover:#818cf8; }
-    *{box-sizing:border-box;margin:0;padding:0} body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;min-height:100vh;transition:background .2s}
-    .login-wrapper{display:flex;min-height:100vh;align-items:center;justify-content:center;padding:1rem;background:linear-gradient(135deg,#f3e8ff,#eff6ff 45%,#ecfdf5)} [data-theme="dark"] .login-wrapper{background:linear-gradient(135deg,#1e1b4b,#172554 45%,#064e3b)}
-    .login-card{background:var(--surface);width:100%;max-width:400px;padding:2.5rem;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);border:1px solid var(--border)}
-    .brand-login{display:flex;flex-direction:column;align-items:center;gap:1rem;margin-bottom:2rem;text-align:center}.forgot-link{display:block;text-align:center;margin-top:1.5rem;font-size:.875rem;color:var(--primary);text-decoration:none;font-weight:500}.forgot-link:hover{text-decoration:underline}
-    .spinner{width:20px;height:20px;border:3px solid rgba(255,255,255,.3);border-radius:50%;border-top-color:#fff;animation:spin 1s ease-in-out infinite;display:none}@keyframes spin{to{transform:rotate(360deg)}}
-    .container{max-width:1440px;margin:0 auto;padding:2rem}.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem}.brand{display:flex;align-items:center;gap:1rem}.logo{width:48px;height:48px;background:linear-gradient(135deg,var(--primary),#818cf8);color:#fff;border-radius:var(--radius-md);display:grid;place-items:center;font-weight:900;font-size:1.25rem;box-shadow:var(--shadow-md)}.logo-large{width:64px;height:64px;font-size:1.5rem}.brand-text h1{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}.brand-text p{color:var(--text-muted);font-size:.875rem}
-    .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.625rem 1.25rem;border-radius:var(--radius-sm);font-weight:600;font-size:.875rem;font-family:inherit;cursor:pointer;transition:all .2s;border:1px solid transparent}.btn-primary{background:var(--primary);color:#fff;box-shadow:var(--shadow-sm)}.btn-primary:hover{background:var(--primary-hover);transform:translateY(-1px);box-shadow:var(--shadow-md)}.btn-primary:disabled{opacity:.7;cursor:not-allowed;transform:none}.btn-sec{background:var(--surface);color:var(--text);border-color:var(--border)}.btn-sec:hover{background:var(--surface-hover)}.btn-danger{color:var(--danger);background:rgba(239,68,68,.1)}.btn-danger:hover{background:rgba(239,68,68,.2)}
-    .dashboard{display:grid;grid-template-columns:260px 1fr;gap:2rem}@media (max-width:1024px){.dashboard{grid-template-columns:1fr}}
-    .panel{background:var(--surface);border-radius:var(--radius-lg);border:1px solid var(--border);box-shadow:var(--shadow-sm);padding:1.5rem;margin-bottom:1.5rem}.nav{display:flex;flex-direction:column;gap:.5rem;position:sticky;top:2rem}.nav-item{display:flex;justify-content:space-between;padding:.75rem 1rem;border-radius:var(--radius-sm);font-weight:500;color:var(--text-muted);cursor:pointer;transition:.2s}.nav-item:hover{background:var(--surface-hover);color:var(--text)}.nav-item.active{background:rgba(99,102,241,.1);color:var(--primary);font-weight:700}.badge{background:var(--surface-hover);padding:.125rem .5rem;border-radius:999px;font-size:.75rem;border:1px solid var(--border)}.nav-item.active .badge{background:#fff;color:var(--primary);border-color:transparent}
-    .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}.form-group{display:flex;flex-direction:column;gap:.375rem;margin-bottom:1rem}.form-group label{font-size:.8125rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}.form-control{padding:.625rem .875rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:.875rem;transition:.2s;outline:none;width:100%}.form-control:focus{border-color:var(--border-focus);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:var(--surface)}
-    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:1.5rem}.stat-card{background:var(--surface);padding:1.25rem;border-radius:var(--radius-lg);border:1px solid var(--border);display:flex;flex-direction:column;gap:.25rem}.stat-value{font-size:2rem;font-weight:900;line-height:1;color:var(--text)}.stat-label{font-size:.875rem;color:var(--text-muted);font-weight:500}
-    .chart-container{height:280px;width:100%;position:relative}.table-container{overflow-x:auto;margin-top:1rem}table{width:100%;border-collapse:separate;border-spacing:0}th{text-align:left;padding:1rem;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);border-bottom:1px solid var(--border);background:rgba(0,0,0,.02)}td{padding:1rem;font-size:.875rem;border-bottom:1px solid var(--border);transition:background .2s}tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--surface-hover)}td[contenteditable="true"]{outline:none;cursor:text}td[contenteditable="true"]:focus{background:var(--bg);box-shadow:inset 0 0 0 2px var(--primary);border-radius:4px}
-    .alert{display:inline-flex;align-items:center;gap:.5rem;background:rgba(245,158,11,.1);color:#d97706;padding:.5rem 1rem;border-radius:999px;font-size:.75rem;font-weight:700;display:none}.alert.visible{display:inline-flex}.flex-between{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem}.mt-4{margin-top:1rem}.mb-4{margin-bottom:1rem}
-  </style>
-</head>
-<body>
-  <div id="loginView" class="login-wrapper">
-    <div class="login-card">
-      <div class="brand-login"><div class="logo logo-large">CA</div><div><h1 style="font-size:1.5rem;font-weight:700;">Acesse sua conta</h1><p style="color:var(--text-muted);font-size:.875rem;">Cronograma PRO - Gestão de Atividades</p></div></div>
-      <form id="loginForm">
-        <div class="form-group"><label for="email">E-mail</label><input type="email" id="email" class="form-control" placeholder="engenharia@empresa.com" required></div>
-        <div class="form-group"><label for="password">Senha</label><input type="password" id="password" class="form-control" placeholder="••••••••" required></div>
-        <button type="submit" class="btn btn-primary" id="submitBtn" style="width:100%;padding:.875rem;margin-top:.5rem;"><span id="btnText">Entrar no sistema</span><div class="spinner" id="spinner"></div></button>
-        <a href="#" class="forgot-link">Esqueceu sua senha?</a>
-      </form>
-    </div>
-  </div>
-  <div id="appView" style="display:none;">
-    <div class="container">
-      <header class="header">
-        <div class="brand"><div class="logo">CA</div><div class="brand-text"><h1>Cronograma PRO</h1><p>Importação de Excel e JSON, Curva S dinâmica e persistência local</p></div></div>
-        <div class="flex-between"><span id="dirtyWarning" class="alert">⚠️ Alterações não exportadas</span><div style="display:flex;gap:.5rem;"><button class="btn btn-sec" id="toggleTheme">Tema</button><button class="btn btn-sec" id="logoutBtn" style="color:var(--danger)">Sair</button></div></div>
-      </header>
-      <div class="dashboard">
-        <aside>
-          <div class="nav">
-            <div class="nav-item active"><span>Dashboard</span><span class="badge" id="countAll">0</span></div>
-            <div class="nav-item"><span>Concluídas</span><span class="badge" id="countDone" style="color:var(--success)">0</span></div>
-            <div class="nav-item"><span>Progresso</span><span class="badge" id="countPct">0%</span></div>
-            <div class="panel mt-4" style="padding:1rem;">
-              <h3 style="font-size:.875rem;margin-bottom:1rem;color:var(--text-muted)">AÇÕES DE ARQUIVO</h3>
-              <div style="display:flex;flex-direction:column;gap:.5rem;">
-                <button class="btn btn-sec" id="loadFile" style="width:100%;">Importar arquivo</button>
-                <button class="btn btn-primary" id="saveJson" style="width:100%;">Exportar JSON</button>
-              </div>
-            </div>
-            <div class="panel" style="padding:1rem; margin-top:0;">
-              <h3 style="font-size:.875rem;margin-bottom:1rem;color:var(--text-muted)">OBRAS SALVAS</h3>
-              <div id="obrasBox" class="form-grid" style="grid-template-columns:1fr; gap:0.75rem;"></div>
-              <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:1rem;">
-                <button class="btn btn-primary" id="addObraBtn">Adicionar nova obra</button>
-              </div>
-            </div>
-          </div>
-        </aside>
-        <main>
-          <div class="panel"><div class="flex-between mb-4"><h2>Configurações do Projeto</h2></div><div class="form-grid"><div class="form-group" style="grid-column:1 / -1;"><label>Nome do Projeto</label><input type="text" id="projName" class="form-control" value="Construção da 7ª CIA PM no Município de Igarapé/MG"></div><div class="form-group"><label>Cliente / Setor</label><input type="text" id="projClient" class="form-control" placeholder="Ex.: Diretoria de Obras"></div><div class="form-group"><label>Escopo / Fase</label><input type="text" id="projScope" class="form-control" placeholder="Ex.: BM 10"></div></div></div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.5rem;margin-bottom:1.5rem;"><div class="panel" style="margin:0;"><h2 class="mb-4">Nova Atividade</h2><div class="form-grid" style="grid-template-columns:1fr;margin-bottom:0;"><div class="form-group" style="margin-bottom:.5rem;"><label>Atividade</label><input type="text" id="fName" class="form-control" placeholder="Ex.: Alvenaria"></div><div class="form-grid" style="margin-bottom:.5rem;"><div class="form-group"><label>Início</label><input type="date" id="fStart" class="form-control"></div><div class="form-group"><label>Fim</label><input type="date" id="fEnd" class="form-control"></div></div><div class="form-grid" style="margin-bottom:.5rem;"><div class="form-group"><label>Status</label><select id="fStatus" class="form-control"><option>Planejada</option><option>Em execução</option><option>Concluída</option><option>Atrasada</option></select></div><div class="form-group"><label>% Concluído</label><input type="number" id="fPct" class="form-control" min="0" max="100" value="0"></div></div></div><button class="btn btn-primary mt-4" id="addRow" style="width:100%;">Adicionar Atividade</button></div><div class="panel" style="margin:0;"><h2 class="mb-4">Curva S - Progresso Físico</h2><div class="chart-container"><canvas id="sCurveChart"></canvas></div></div></div>
-          <div class="stats-grid" id="stats"></div>
-          <div class="panel"><div class="flex-between"><h2>Índice / Itens Principais</h2><div><button class="btn btn-sec" id="fillSample" style="margin-right:.5rem">Limpar</button><button class="btn btn-sec" id="exportCsv">Exportar CSV</button></div></div><div class="table-container"><table><thead><tr><th>Item</th><th>Descrição</th><th style="text-align:right">Valor Contrato</th><th style="text-align:right">Medição</th><th style="text-align:right">Acumulado</th><th style="text-align:right">Saldo</th><th style="text-align:right">% Executada</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div></div>
-        </main>
-      </div>
-    </div>
-  </div>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-<script>
-const loginView=document.getElementById('loginView'), appView=document.getElementById('appView'), tbody=document.getElementById('tbody'), stats=document.getElementById('stats'), dirtyWarning=document.getElementById('dirtyWarning');
-let obras=[], selectedObraId=null, rows=[], isDirty=false, chartInstance=null, sourceContrato=null;
-const fmtMoney=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v)||0);
-const STORAGE_KEY='cronograma_obras_v1';
-function uid(){ return 'obra_'+Math.random().toString(36).slice(2,10)+'_'+Date.now().toString(36); }
-function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function normalizeName(name){ return String(name || '').trim().toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9\-_]/gi,''); }
-function fileBaseName(name){ return String(name || '').replace(/\.[^.]+$/, ''); }
-function checkAuth(){ if(localStorage.getItem('cronograma_auth')==='true'){ loginView.style.display='none'; appView.style.display='block'; loadState(); } else { loginView.style.display='flex'; appView.style.display='none'; } }
-document.getElementById('loginForm').addEventListener('submit',function(e){ e.preventDefault(); const btnText=document.getElementById('btnText'), spinner=document.getElementById('spinner'), submitBtn=document.getElementById('submitBtn'); btnText.textContent='Autenticando...'; spinner.style.display='block'; submitBtn.disabled=true; setTimeout(()=>{ localStorage.setItem('cronograma_auth','true'); btnText.textContent='Entrar no sistema'; spinner.style.display='none'; submitBtn.disabled=false; document.getElementById('password').value=''; checkAuth(); },500); });
-document.getElementById('logoutBtn').addEventListener('click',function(){ localStorage.removeItem('cronograma_auth'); checkAuth(); });
-function markDirty(){ isDirty=true; dirtyWarning.classList.add('visible'); syncState(); }
-function syncState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify({ obras, selectedObraId })); }
-function loadState(){ try{ const st=JSON.parse(localStorage.getItem(STORAGE_KEY)); obras=Array.isArray(st?.obras)?st.obras:[]; selectedObraId=st?.selectedObraId || obras?.[0]?.id || null; }catch(e){ obras=[]; selectedObraId=null; } if(!obras.length){ rows=[]; sourceContrato=null; renderAll(); return; } const sel=obras.find(o=>o.id===selectedObraId) || obras[0]; selectedObraId=sel.id; applySelected(sel); isDirty=false; dirtyWarning.classList.remove('visible'); renderAll(); }
-function applySelected(o){ rows=Array.isArray(o.itens)?o.itens:[]; sourceContrato=o; document.getElementById('projName').value=o.nomeProjeto || o.nome || 'Nova obra'; document.getElementById('projClient').value=o.cliente || ''; document.getElementById('projScope').value=o.medicaoAtual || o.nome || 'BM 10'; }
-function currentObra(){ return obras.find(o=>o.id===selectedObraId); }
-function renderObrasBox(){ const box=document.getElementById('obrasBox'); if(!box) return; box.innerHTML=`<div class="form-group" style="margin-bottom:0;"><label>Selecionar obra</label><select id="obraSelect" class="form-control">${obras.map(o=>`<option value="${o.id}" ${o.id===selectedObraId?'selected':''}>${esc(o.nome || fileBaseName(o.arquivoNome) || 'Obra')}</option>`).join('')}</select></div><div style="display:flex; gap:.5rem; flex-wrap:wrap;"><button class="btn btn-sec" id="openObraBtn">Abrir</button><button class="btn btn-sec" id="replaceObraBtn">Atualizar obra</button><button class="btn btn-danger" id="deleteObraBtn">Remover obra</button></div>`; document.getElementById('obraSelect').onchange=e=>{ selectedObraId=e.target.value; const o=currentObra(); if(o){ applySelected(o); renderAll(); syncState(); } }; document.getElementById('openObraBtn').onclick=()=>{ const o=currentObra(); if(o) applySelected(o); renderAll(); }; document.getElementById('replaceObraBtn').onclick=()=>loadFromJsonOrExcel(true); document.getElementById('deleteObraBtn').onclick=()=>{ if(!selectedObraId) return; obras=obras.filter(o=>o.id!==selectedObraId); selectedObraId=obras[0]?.id || null; if(selectedObraId) applySelected(currentObra()); else { rows=[]; sourceContrato=null; } syncState(); renderAll(); }; }
-function renderTable(){ tbody.innerHTML=rows.map((r,i)=>`<tr data-i="${i}"><td contenteditable="true" data-k="item">${esc(r.item)}</td><td contenteditable="true" data-k="descricao">${esc(r.descricao)}</td><td contenteditable="true" data-k="valorContrato" style="text-align:right">${fmtMoney(r.valorContrato)}</td><td contenteditable="true" data-k="medicao" style="text-align:right">${fmtMoney(r.medicao)}</td><td contenteditable="true" data-k="acumulado" style="text-align:right">${fmtMoney(r.acumulado)}</td><td contenteditable="true" data-k="saldo" style="text-align:right">${fmtMoney(r.saldo)}</td><td contenteditable="true" data-k="percentualExecutado" style="text-align:right;font-weight:700">${Number(r.percentualExecutado||0).toFixed(2)}</td><td style="text-align:right"><button data-del="${i}" class="btn btn-danger" style="padding:.4rem;border-radius:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events:none"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></td></tr>`).join(''); }
-function updateChart(){ const ctx=document.getElementById('sCurveChart').getContext('2d'); const labels=rows.map(r=>String(r.item||'')); const data=rows.map(r=>Number(r.percentualExecutado)||0); if(chartInstance) chartInstance.destroy(); const theme=document.documentElement.dataset.theme, gridColor=theme==='dark'?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)', textColor=theme==='dark'?'#94a3b8':'#64748b'; chartInstance=new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:'% Geral da Obra',data,backgroundColor:'rgba(99,102,241,0.2)',borderColor:'#6366f1',borderWidth:1,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100,grid:{color:gridColor},ticks:{color:textColor,callback:v=>v+'%'}},x:{grid:{display:false},ticks:{color:textColor}}},plugins:{legend:{labels:{color:textColor}}}}}); }
-function updateDashboard(){ const done=rows.filter(r=>Number(r.percentualExecutado)>=99.5).length; const resumoPct=Number(sourceContrato?.resumo?.percentual); const totalPct=!isNaN(resumoPct) ? resumoPct : (()=>{ const totalContrato=rows.reduce((a,r)=>a+(Number(r.valorContrato)||0),0); const totalAcumulado=rows.reduce((a,r)=>a+(Number(r.acumulado)||0),0); return totalContrato>0 ? (totalAcumulado/totalContrato*100) : 0; })(); stats.innerHTML=`<div class="stat-card"><span class="stat-label">Itens Totais</span><span class="stat-value">${rows.length}</span></div><div class="stat-card"><span class="stat-label">Concluídos</span><span class="stat-value" style="color:var(--success)">${done}</span></div><div class="stat-card"><span class="stat-label">% Geral da Obra</span><span class="stat-value">${totalPct.toFixed(2)}%</span></div><div class="stat-card"><span class="stat-label">Medição Atual</span><span class="stat-value" style="font-size:1.2rem">${esc(sourceContrato?.medicaoAtual||'BM 10')}</span></div>`; document.getElementById('countAll').textContent=obras.length; document.getElementById('countDone').textContent=done; document.getElementById('countPct').textContent=totalPct.toFixed(2)+'%'; updateChart(); }
-function renderAll(){ renderObrasBox(); renderTable(); updateDashboard(); }
-function normalizeImportedRows(list){ if(!Array.isArray(list)) return []; return list.map(item=>({ item:item?.item??'', descricao:item?.descricao??item?.descricaoServico??item?.name??'', valorContrato:Number(item?.valorContrato??item?.valor_contrato??0)||0, medicao:Number(item?.medicao??0)||0, acumulado:Number(item?.acumulado??0)||0, saldo:Number(item?.saldo??0)||0, percentualExecutado:Number(item?.percentualExecutado??item?.percentual_executado??0)||0 })); }
+    const firebaseConfig = {
+      apiKey: "AIzaSyBc7jh4dai3OZIriKdFxguI44A73TRKYTI",
+      authDomain: "cronograma-pro-ray.firebaseapp.com",
+      projectId: "cronograma-pro-ray",
+      storageBucket: "cronograma-pro-ray.firebasestorage.app",
+      messagingSenderId: "358433192984",
+      appId: "1:358433192984:web:5af60313307f9bfadc176d"
+    };
 
-async function readExcelFile(file) {
-  if (!file) throw new Error('Nenhum arquivo fornecido.');
+    const app  = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db   = getFirestore(app);
 
-  const buffer = await file.arrayBuffer();
-  const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: false });
+    const ADMIN_EMAIL = "obras@admin.com";
+    const ADMIN_SENHA = "35343535";
 
-  const target = wb.SheetNames
-    .filter(n => /^(BM|MED)\s*\d+/i.test(n))
-    .sort((a, b) => parseInt(a.match(/\d+/)?.[0]||0) - parseInt(b.match(/\d+/)?.[0]||0))
-    .at(-1) || wb.SheetNames.at(-1);
-  if (!target) throw new Error('Nenhuma aba encontrada no arquivo.');
+    // ── helpers ──────────────────────────────────────────────────────────────
+    const fmtMoney = v => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v)||0);
+    const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const fileBaseName = n => String(n||'').replace(/\.[^.]+$/,'');
+    function norm(v){ return String(v??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
+    const isNum = v => v!=='' && !isNaN(Number(v)) && isFinite(Number(v));
 
-  const ws   = wb.Sheets[target];
-  const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+    // ── state ─────────────────────────────────────────────────────────────────
+    let currentUser = null, isAdmin = false;
+    let unsubObras = null, unsubAllObras = null;
+    let obras = [], selectedObraId = null, rows = [], sourceContrato = null;
+    let chartInstance = null;
+    let allUsersData = {}; // uid → {nome, email, obras[]}
+    let adminUnsubMap = {}; // uid → unsubscribe
 
-  function norm(v) {
-    return String(v ?? '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim();
-  }
-
-  const isNum = v => v !== '' && !isNaN(Number(v)) && isFinite(Number(v));
-
-  const RE = {
-    desc  : /discrimina|descri|servico|servico/,
-    vc    : /valor.{0,25}contrato|total.{0,25}contrato/,
-    med   : /no.{0,10}period|no.{0,10}mes|^medicao$|^realizado$|periodo/,
-    acum  : /acumulado/,
-    saldo : /^saldo$/
-  };
-
-  let cols = { desc: -1, vc: -1, med: -1, acum: -1, saldo: -1 };
-  let dataStart = -1;
-
-  for (let r = 0; r < data.length; r++) {
-    const row = data[r] || [];
-    if (/^\d+$/.test(String(row[0] ?? '').trim())) {
-      dataStart = r;
-      break;
+    // ── views ─────────────────────────────────────────────────────────────────
+    const $ = id => document.getElementById(id);
+    function showView(name){
+      ['loginView','appView','adminView'].forEach(v=>$(v).style.display='none');
+      $(name).style.display = name==='loginView' ? 'flex' : 'block';
     }
 
-    for (let c = 0; c < row.length; c++) {
-      const t = norm(row[c]);
-      if (!t) continue;
-      if (RE.desc.test(t)) cols.desc = c;
-      if (RE.vc.test(t)) cols.vc = c;
-      if (RE.med.test(t)) cols.med = c;
-      if (RE.acum.test(t)) cols.acum = c;
-      if (RE.saldo.test(t)) cols.saldo = c;
-    }
-  }
-
-  if (cols.vc < 0 && dataStart >= 0) {
-    const fr = data[dataStart] || [];
-    const numCols = [];
-    for (let c = 1; c < fr.length; c++) if (isNum(fr[c])) numCols.push(c);
-    const vcIdx = numCols.findIndex(c => Number(fr[c]) > 0);
-    if (vcIdx >= 0) {
-      cols.vc = numCols[vcIdx];
-      if (cols.med < 0) cols.med = numCols[vcIdx + 1] ?? cols.vc + 1;
-      if (cols.acum < 0) cols.acum = numCols[vcIdx + 2] ?? cols.vc + 2;
-      if (cols.saldo < 0) cols.saldo = numCols[vcIdx + 3] ?? cols.vc + 3;
-    } else {
-      cols.vc = 12; cols.med = 13; cols.acum = 14; cols.saldo = 15;
-    }
-  }
-
-  const items = [];
-  for (let r = 0; r < data.length; r++) {
-    const row = data[r] || [];
-    const itemStr = String(row[0] ?? '').trim();
-    if (!/^\d+$/.test(itemStr)) continue;
-
-    let descricao = '';
-    if (cols.desc >= 0) descricao = String(row[cols.desc] ?? '').trim();
-    if (!descricao) {
-      const limit = cols.vc > 0 ? cols.vc : 10;
-      for (let c = 1; c < limit; c++) {
-        const v = String(row[c] ?? '').trim();
-        if (v && !isNum(row[c])) { descricao = v; break; }
+    // ════════════════════════════════════════════════════════════════════════
+    //  AUTH
+    // ════════════════════════════════════════════════════════════════════════
+    async function ensureAdminExists(){
+      try{ await signInWithEmailAndPassword(auth, ADMIN_EMAIL, ADMIN_SENHA); }
+      catch(e){
+        if(e.code==='auth/user-not-found'||e.code==='auth/invalid-credential'||e.code==='auth/invalid-email'){
+          const cred = await createUserWithEmailAndPassword(auth, ADMIN_EMAIL, ADMIN_SENHA);
+          await setDoc(doc(db,'users',cred.user.uid),{nome:'Chefe / Admin',email:ADMIN_EMAIL,role:'admin',criadoEm:Date.now()});
+        }
       }
     }
 
-    const valorContrato = Number(row[cols.vc]) || 0;
-    const medicao = Number(row[cols.med]) || 0;
-    const acumulado = Number(row[cols.acum]) || 0;
-    let saldo = cols.saldo >= 0 ? Number(row[cols.saldo]) : 0;
-    if (!saldo && valorContrato > 0) saldo = valorContrato - acumulado;
-
-    const percentualExecutado = valorContrato > 0
-      ? +(acumulado / valorContrato * 100).toFixed(2)
-      : 0;
-
-    items.push({
-      item: itemStr,
-      descricao,
-      valorContrato: +valorContrato.toFixed(2),
-      medicao: +medicao.toFixed(2),
-      acumulado: +acumulado.toFixed(2),
-      saldo: +saldo.toFixed(2),
-      percentualExecutado
+    onAuthStateChanged(auth, async user => {
+      currentUser = user;
+      if(!user){ showView('loginView'); return; }
+      const snap = await getDoc(doc(db,'users',user.uid));
+      const data = snap.exists() ? snap.data() : {};
+      isAdmin = data.role === 'admin';
+      if(isAdmin){ initAdminView(); }
+      else        { initUserView(); }
     });
-  }
 
-  const summaryTotal = items.reduce((a, i) => a + i.valorContrato, 0);
-  const summaryAcumulado = items.reduce((a, i) => a + i.acumulado, 0);
-  const summaryPct = summaryTotal > 0 ? +(summaryAcumulado / summaryTotal * 100).toFixed(2) : 0;
+    // ── Login form ────────────────────────────────────────────────────────────
+    $('loginForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const email = $('loginEmail').value.trim();
+      const senha = $('loginSenha').value;
+      const btn = $('loginBtn'); btn.disabled=true; btn.textContent='Entrando...';
+      try{
+        await signInWithEmailAndPassword(auth, email, senha);
+      } catch(err){
+        $('loginError').textContent = 'E-mail ou senha inválidos.';
+        $('loginError').style.display='block';
+      } finally{ btn.disabled=false; btn.textContent='Entrar'; }
+    });
 
-  return {
-    nome: fileBaseName(file.name),
-    nomeProjeto: wb.Props?.Title || fileBaseName(file.name) || 'Nova obra',
-    medicaoAtual: target,
-    itens: items,
-    resumo: { total: summaryTotal, acumulado: summaryAcumulado, percentual: summaryPct }
-  };
-}
+    $('logoutBtnAdmin').addEventListener('click', () => { cleanupListeners(); signOut(auth); });
+    $('logoutBtnUser' ).addEventListener('click', () => { cleanupListeners(); signOut(auth); });
 
-function convertContratoJson(obj){ const servicos=Array.isArray(obj?.servicos)?obj.servicos:[]; return servicos.map(servico=>{ const valorTotal=Number(servico?.valorTotal)||0; const medicoes=Array.isArray(servico?.medicoes)?servico.medicoes:[]; const totalRealizado=medicoes.reduce((acc,m)=>acc+(Number(m?.realizado)||0),0); const pct=valorTotal>0?Math.max(0,Math.min(100,(totalRealizado/valorTotal)*100)):0; return {item:String(servico?.item??''),descricao:servico?.servico??'',valorContrato:+valorTotal.toFixed(2),medicao:+totalRealizado.toFixed(2),acumulado:+totalRealizado.toFixed(2),saldo:+(valorTotal-totalRealizado).toFixed(2),percentualExecutado:+pct.toFixed(2)}; }); }
-function loadFromJsonOrExcel(replace=false){ const input=document.createElement('input'); input.type='file'; input.accept='.json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; input.onchange=async e=>{ if(!e.target.files.length) return; const file=e.target.files[0]; const ext=file.name.split('.').pop().toLowerCase(); try{ let obj, importedRows=[]; if(ext==='xlsx'){ obj=await readExcelFile(file); importedRows=normalizeImportedRows(obj.itens); } else { const text=await file.text(); obj=JSON.parse(text); if(Array.isArray(obj)) importedRows=normalizeImportedRows(obj); else if(Array.isArray(obj.itens)) importedRows=normalizeImportedRows(obj.itens); else if(Array.isArray(obj.lines)) importedRows=normalizeImportedRows(obj.lines); else if(Array.isArray(obj.servicos)) importedRows=convertContratoJson(obj); else throw new Error('Formato inválido'); } const obraNome = fileBaseName(file.name) || obj.nome || obj.medicaoAtual || 'Nova obra'; const obraId = normalizeName(fileBaseName(file.name)) || uid(); const obra={ id: replace && selectedObraId ? selectedObraId : obraId, nome: obraNome, nomeProjeto: obj.nomeProjeto || obj.obra || obraNome, cliente: obj.cliente || '', arquivoNome: file.name, origem: ext, medicaoAtual: obj.medicaoAtual || obj.nome || '', itens: importedRows, resumo: obj.resumo || {percentual: 0} }; if(replace && selectedObraId){ obras=obras.map(o=>o.id===selectedObraId?obra:o); } else { obras.push(obra); selectedObraId=obra.id; } applySelected(obra); syncState(); isDirty=false; dirtyWarning.classList.remove('visible'); renderAll(); alert('Arquivo importado com sucesso.'); }catch(err){ console.error(err); alert('Não foi possível importar o arquivo: ' + err.message); } }; input.click(); }
-function addRowFromInputs(){ rows.push({item:'',descricao:document.getElementById('fName').value||'Nova atividade',valorContrato:0,medicao:0,acumulado:Number(document.getElementById('fPct').value)||0,saldo:0,percentualExecutado:Number(document.getElementById('fPct').value)||0}); const o=currentObra(); if(o) o.itens=rows; renderAll(); markDirty(); }
-function saveAsJson(){ const o=currentObra(); const name=document.getElementById('projName').value.trim()||'projeto-cronograma'; const payload={ obra:name, medicaoAtual:o?.medicaoAtual || 'BM 10', itens:rows }; const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name.replace(/[^a-zA-Z0-9\-_]/g,'-').toLowerCase()+'.json'; a.click(); URL.revokeObjectURL(a.href); }
-tbody.addEventListener('input',e=>{ const t=e.target,tr=t.closest('tr'); if(!tr) return; const i=+tr.dataset.i,k=t.dataset.k; if(k){ if(['valorContrato','medicao','acumulado','saldo','percentualExecutado'].includes(k)) rows[i][k]=Number(t.textContent.replace(',','.').replace(/[^\d.-]/g,''))||0; else rows[i][k]=t.textContent.trim(); const o=currentObra(); if(o) o.itens=rows; markDirty(); updateDashboard(); } });
-tbody.addEventListener('focusout',e=>{ const t=e.target,tr=t.closest('tr'); if(!tr) return; const i=+tr.dataset.i,k=t.dataset.k; if(k && ['valorContrato','medicao','acumulado','saldo'].includes(k)) t.textContent=fmtMoney(rows[i][k]); else if(k==='percentualExecutado') t.textContent=Number(rows[i][k]).toFixed(2); });
-tbody.addEventListener('click',e=>{ const b=e.target.closest('button[data-del]'); if(!b) return; rows.splice(+b.dataset.del,1); const o=currentObra(); if(o) o.itens=rows; markDirty(); renderAll(); });
-document.getElementById('addRow').onclick=addRowFromInputs; document.getElementById('fillSample').onclick=()=>{ rows=[]; const o=currentObra(); if(o) o.itens=[]; renderAll(); markDirty(); }; document.getElementById('saveJson').onclick=saveAsJson; document.getElementById('loadFile').onclick=()=>loadFromJsonOrExcel(false); document.getElementById('toggleTheme').onclick=()=>{ document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'; updateChart(); };
-document.getElementById('exportCsv').onclick=()=>{ const fields=['item','descricao','valorContrato','medicao','acumulado','saldo','percentualExecutado']; const body=rows.map(r=>fields.map(k=>`"${String(r[k]??'').replace(/"/g,'""')}"`).join(',')).join('\n'); const blob=new Blob([fields.join(',')+'\n'+body],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='cronograma.csv'; a.click(); URL.revokeObjectURL(a.href); };
-document.getElementById('addObraBtn').onclick=()=>loadFromJsonOrExcel(false);
-window.addEventListener('beforeunload',e=>{ if(isDirty){ e.preventDefault(); e.returnValue=''; } });
-window.addEventListener('DOMContentLoaded',checkAuth);
-</script>
+    function cleanupListeners(){
+      if(unsubObras) unsubObras();
+      if(unsubAllObras) unsubAllObras();
+      Object.values(adminUnsubMap).forEach(fn=>fn());
+      adminUnsubMap={};
+      allUsersData={};
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  ADMIN VIEW
+    // ════════════════════════════════════════════════════════════════════════
+    function initAdminView(){
+      showView('adminView');
+      listenAllUsers();
+      setupAdminColabForm();
+    }
+
+    function listenAllUsers(){
+      const q = collection(db,'users');
+      unsubAllObras = onSnapshot(q, snap => {
+        snap.docs.forEach(d => {
+          const data = d.data();
+          if(!allUsersData[d.id]) allUsersData[d.id] = {nome:data.nome||data.email, email:data.email, role:data.role, obras:[]};
+          else { allUsersData[d.id].nome=data.nome||data.email; allUsersData[d.id].email=data.email; allUsersData[d.id].role=data.role; }
+          if(data.role!=='admin' && !adminUnsubMap[d.id]){
+            adminUnsubMap[d.id] = onSnapshot(collection(db,'users',d.id,'obras'), oSnap => {
+              allUsersData[d.id].obras = oSnap.docs.map(o=>({id:o.id,...o.data()}));
+              renderAdminDashboard();
+            });
+          }
+        });
+        renderAdminDashboard();
+        renderColabList();
+      });
+    }
+
+    function renderAdminDashboard(){
+      const container = $('adminObrasList');
+      if(!container) return;
+      let html = '';
+      Object.values(allUsersData).forEach(u => {
+        if(u.role==='admin') return;
+        if(!u.obras||!u.obras.length) return;
+        u.obras.forEach(obra => {
+          const itens = Array.isArray(obra.itens)?obra.itens:[];
+          const totalVC = itens.reduce((a,i)=>a+(Number(i.valorContrato)||0),0);
+          const totalAcum = itens.reduce((a,i)=>a+(Number(i.acumulado)||0),0);
+          const pct = totalVC>0?(totalAcum/totalVC*100).toFixed(2):0;
+          html += `
+          <div class="obra-card">
+            <div class="obra-card-header">
+              <div>
+                <div class="obra-card-title">${esc(obra.nome||'Sem nome')}</div>
+                <div class="obra-card-sub">👤 ${esc(u.nome)} &nbsp;|&nbsp; ${itens.length} itens &nbsp;|&nbsp; Aba: ${esc(obra.medicaoAtual||'-')}</div>
+              </div>
+              <div class="obra-card-pct">${pct}%</div>
+            </div>
+            <div class="obra-progress-bar"><div class="obra-progress-fill" style="width:${Math.min(100,pct)}%"></div></div>
+            <div class="obra-card-footer">
+              <span>Contrato: ${fmtMoney(totalVC)}</span>
+              <span>Acumulado: ${fmtMoney(totalAcum)}</span>
+              <span>Saldo: ${fmtMoney(totalVC-totalAcum)}</span>
+            </div>
+          </div>`;
+        });
+      });
+      container.innerHTML = html || '<p style="color:var(--text-muted);padding:1rem">Nenhuma obra cadastrada pelos colaboradores ainda.</p>';
+
+      // stats
+      let totalObras=0, totalItens=0, totalVC=0, totalAcum=0;
+      Object.values(allUsersData).forEach(u=>{
+        if(u.role==='admin') return;
+        (u.obras||[]).forEach(o=>{
+          totalObras++;
+          const it=Array.isArray(o.itens)?o.itens:[];
+          totalItens+=it.length;
+          totalVC+=it.reduce((a,i)=>a+(Number(i.valorContrato)||0),0);
+          totalAcum+=it.reduce((a,i)=>a+(Number(i.acumulado)||0),0);
+        });
+      });
+      const pctGeral = totalVC>0?(totalAcum/totalVC*100).toFixed(2):0;
+      $('adminStats').innerHTML=`
+        <div class="stat-card"><span class="stat-label">Total de Obras</span><span class="stat-value">${totalObras}</span></div>
+        <div class="stat-card"><span class="stat-label">Total de Itens</span><span class="stat-value">${totalItens}</span></div>
+        <div class="stat-card"><span class="stat-label">% Geral</span><span class="stat-value">${pctGeral}%</span></div>
+        <div class="stat-card"><span class="stat-label">Acumulado Geral</span><span class="stat-value" style="font-size:1.1rem">${fmtMoney(totalAcum)}</span></div>`;
+    }
+
+    function renderColabList(){
+      const box = $('colabList');
+      if(!box) return;
+      const colabs = Object.entries(allUsersData).filter(([,u])=>u.role!=='admin');
+      if(!colabs.length){ box.innerHTML='<p style="color:var(--text-muted);font-size:.875rem">Nenhum colaborador cadastrado.</p>'; return; }
+      box.innerHTML = colabs.map(([uid,u])=>`
+        <div class="colab-item">
+          <div><strong>${esc(u.nome)}</strong><br><small>${esc(u.email)}</small></div>
+          <button class="btn btn-danger" style="padding:.35rem .75rem;font-size:.75rem" onclick="removeColab('${uid}')">Remover</button>
+        </div>`).join('');
+    }
+
+    function setupAdminColabForm(){
+      $('addColabForm').addEventListener('submit', async e=>{
+        e.preventDefault();
+        const nome  = $('colabNome').value.trim();
+        const email = $('colabEmail').value.trim();
+        const senha = $('colabSenha').value;
+        const btn = $('addColabBtn'); btn.disabled=true; btn.textContent='Cadastrando...';
+        try{
+          // salva auth atual para relogar depois
+          const adminEmail = currentUser.email;
+          const cred = await createUserWithEmailAndPassword(auth, email, senha);
+          await setDoc(doc(db,'users',cred.user.uid),{nome,email,role:'colaborador',criadoEm:Date.now()});
+          // reloga admin
+          await signOut(auth);
+          await signInWithEmailAndPassword(auth, adminEmail, ADMIN_SENHA);
+          $('colabNome').value=''; $('colabEmail').value=''; $('colabSenha').value='';
+          alert(`Colaborador "${nome}" cadastrado com sucesso!`);
+        } catch(err){
+          alert('Erro ao cadastrar: '+err.message);
+        } finally{ btn.disabled=false; btn.textContent='Cadastrar colaborador'; }
+      });
+    }
+
+    window.removeColab = async uid => {
+      if(!confirm('Remover este colaborador e todas as obras dele?')) return;
+      // deletar obras subcollection manualmente (Firestore não faz cascade)
+      const obras = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      const oSnap = await obras.getDocs(collection(db,'users',uid,'obras'));
+      for(const o of oSnap.docs) await deleteDoc(doc(db,'users',uid,'obras',o.id));
+      await deleteDoc(doc(db,'users',uid));
+      delete allUsersData[uid];
+      if(adminUnsubMap[uid]){ adminUnsubMap[uid](); delete adminUnsubMap[uid]; }
+      renderAdminDashboard(); renderColabList();
+    };
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  COLABORADOR VIEW
+    // ════════════════════════════════════════════════════════════════════════
+    function initUserView(){
+      showView('appView');
+      obras=[]; selectedObraId=null; rows=[];
+      listenUserObras();
+    }
+
+    function listenUserObras(){
+      if(unsubObras) unsubObras();
+      unsubObras = onSnapshot(collection(db,'users',currentUser.uid,'obras'), snap=>{
+        obras = snap.docs.map(d=>({id:d.id,...d.data()}));
+        if(!selectedObraId && obras.length) selectedObraId=obras[0].id;
+        if(selectedObraId){ const o=obras.find(x=>x.id===selectedObraId); if(o) applySelected(o); }
+        renderAll();
+      });
+    }
+
+    async function saveObraFirestore(obra){
+      await setDoc(doc(db,'users',currentUser.uid,'obras',obra.id), obra);
+    }
+
+    async function deleteObraFirestore(id){
+      await deleteDoc(doc(db,'users',currentUser.uid,'obras',id));
+    }
+
+    // ── colaborador: render ───────────────────────────────────────────────────
+    function applySelected(o){ rows=Array.isArray(o.itens)?o.itens:[]; sourceContrato=o; $('projName').value=o.nomeProjeto||o.nome||'Nova obra'; $('projClient').value=o.cliente||''; $('projScope').value=o.medicaoAtual||''; }
+    function currentObra(){ return obras.find(o=>o.id===selectedObraId); }
+
+    function renderObrasBox(){
+      const box=$('obrasBox'); if(!box) return;
+      box.innerHTML=`<div class="form-group" style="margin-bottom:0"><label>Selecionar obra</label><select id="obraSelect" class="form-control">${obras.map(o=>`<option value="${o.id}" ${o.id===selectedObraId?'selected':''}>${esc(o.nome||'Obra')}</option>`).join('')}</select></div><div style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn btn-sec" id="openObraBtn">Abrir</button><button class="btn btn-sec" id="replaceObraBtn">Atualizar</button><button class="btn btn-danger" id="deleteObraBtn">Remover</button></div>`;
+      $('obraSelect').onchange=e=>{ selectedObraId=e.target.value; const o=currentObra(); if(o){applySelected(o);renderAll();} };
+      $('openObraBtn').onclick=()=>{ const o=currentObra(); if(o){applySelected(o);renderAll();} };
+      $('replaceObraBtn').onclick=()=>loadFromJsonOrExcel(true);
+      $('deleteObraBtn').onclick=async()=>{ if(!selectedObraId||!confirm('Remover obra?')) return; await deleteObraFirestore(selectedObraId); selectedObraId=null; };
+    }
+
+    function renderTable(){ $('tbody').innerHTML=rows.map((r,i)=>`<tr data-i="${i}"><td contenteditable="true" data-k="item">${esc(r.item)}</td><td contenteditable="true" data-k="descricao">${esc(r.descricao)}</td><td contenteditable="true" data-k="valorContrato" style="text-align:right">${fmtMoney(r.valorContrato)}</td><td contenteditable="true" data-k="medicao" style="text-align:right">${fmtMoney(r.medicao)}</td><td contenteditable="true" data-k="acumulado" style="text-align:right">${fmtMoney(r.acumulado)}</td><td contenteditable="true" data-k="saldo" style="text-align:right">${fmtMoney(r.saldo)}</td><td contenteditable="true" data-k="percentualExecutado" style="text-align:right;font-weight:700">${Number(r.percentualExecutado||0).toFixed(2)}</td><td style="text-align:right"><button data-del="${i}" class="btn btn-danger" style="padding:.4rem;border-radius:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events:none"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></td></tr>`).join(''); }
+
+    function updateChart(){ const ctx=$('sCurveChart').getContext('2d'); if(chartInstance) chartInstance.destroy(); const theme=document.documentElement.dataset.theme,gc=theme==='dark'?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)',tc=theme==='dark'?'#94a3b8':'#64748b'; chartInstance=new Chart(ctx,{type:'bar',data:{labels:rows.map(r=>String(r.item||'')),datasets:[{label:'% Executado',data:rows.map(r=>Number(r.percentualExecutado)||0),backgroundColor:'rgba(99,102,241,0.2)',borderColor:'#6366f1',borderWidth:1,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100,grid:{color:gc},ticks:{color:tc,callback:v=>v+'%'}},x:{grid:{display:false},ticks:{color:tc}}},plugins:{legend:{labels:{color:tc}}}}}); }
+
+    function updateDashboard(){ const done=rows.filter(r=>Number(r.percentualExecutado)>=99.5).length; const rp=Number(sourceContrato?.resumo?.percentual); const tc=rows.reduce((a,r)=>a+(Number(r.valorContrato)||0),0); const ta=rows.reduce((a,r)=>a+(Number(r.acumulado)||0),0); const pct=!isNaN(rp)?rp:(tc>0?(ta/tc*100):0); $('stats').innerHTML=`<div class="stat-card"><span class="stat-label">Itens Totais</span><span class="stat-value">${rows.length}</span></div><div class="stat-card"><span class="stat-label">Concluídos</span><span class="stat-value" style="color:var(--success)">${done}</span></div><div class="stat-card"><span class="stat-label">% Geral</span><span class="stat-value">${pct.toFixed(2)}%</span></div><div class="stat-card"><span class="stat-label">Medição Atual</span><span class="stat-value" style="font-size:1.2rem">${esc(sourceContrato?.medicaoAtual||'-')}</span></div>`; $('countAll').textContent=obras.length; $('countDone').textContent=done; $('countPct').textContent=pct.toFixed(2)+'%'; updateChart(); }
+
+    function renderAll(){ renderObrasBox(); renderTable(); updateDashboard(); }
+
+    // ── Excel import ──────────────────────────────────────────────────────────
+    function normalizeImportedRows(list){ if(!Array.isArray(list)) return []; return list.map(item=>({item:item?.item??'',descricao:item?.descricao??item?.descricaoServico??item?.name??'',valorContrato:Number(item?.valorContrato??item?.valor_contrato??0)||0,medicao:Number(item?.medicao??0)||0,acumulado:Number(item?.acumulado??0)||0,saldo:Number(item?.saldo??0)||0,percentualExecutado:Number(item?.percentualExecutado??item?.percentual_executado??0)||0})); }
+
+    async function readExcelFile(file){
+      if(!file) throw new Error('Nenhum arquivo fornecido.');
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buffer),{type:'array',cellDates:false});
+      const target = wb.SheetNames.filter(n=>/^(BM|MED)\s*\d+/i.test(n)).sort((a,b)=>parseInt(a.match(/\d+/)?.[0]||0)-parseInt(b.match(/\d+/)?.[0]||0)).at(-1)||wb.SheetNames.at(-1);
+      if(!target) throw new Error('Nenhuma aba encontrada.');
+      const ws=wb.Sheets[target];
+      const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+      const RE={desc:/discrimina|descri|servico/,vc:/valor.{0,25}contrato|total.{0,25}contrato/,med:/no.{0,10}period|no.{0,10}mes|^medicao$|^realizado$|periodo/,acum:/acumulado/,saldo:/^saldo$/};
+      let cols={desc:-1,vc:-1,med:-1,acum:-1,saldo:-1},dataStart=-1;
+      for(let r=0;r<data.length;r++){
+        const row=data[r]||[];
+        if(/^\d+$/.test(String(row[0]??'').trim())){dataStart=r;break;}
+        for(let c=0;c<row.length;c++){const t=norm(row[c]);if(!t)continue;if(RE.desc.test(t))cols.desc=c;if(RE.vc.test(t))cols.vc=c;if(RE.med.test(t))cols.med=c;if(RE.acum.test(t))cols.acum=c;if(RE.saldo.test(t))cols.saldo=c;}
+      }
+      if(cols.vc<0&&dataStart>=0){const fr=data[dataStart]||[];const nc=[];for(let c=1;c<fr.length;c++)if(isNum(fr[c]))nc.push(c);const vi=nc.findIndex(c=>Number(fr[c])>0);if(vi>=0){cols.vc=nc[vi];if(cols.med<0)cols.med=nc[vi+1]??cols.vc+1;if(cols.acum<0)cols.acum=nc[vi+2]??cols.vc+2;if(cols.saldo<0)cols.saldo=nc[vi+3]??cols.vc+3;}else{cols.vc=12;cols.med=13;cols.acum=14;cols.saldo=15;}}
+      const items=[];
+      for(let r=0;r<data.length;r++){
+        const row=data[r]||[];const itemStr=String(row[0]??'').trim();if(!/^\d+$/.test(itemStr))continue;
+        let descricao='';if(cols.desc>=0)descricao=String(row[cols.desc]??'').trim();
+        if(!descricao){const lim=cols.vc>0?cols.vc:10;for(let c=1;c<lim;c++){const v=String(row[c]??'').trim();if(v&&!isNum(row[c])){descricao=v;break;}}}
+        const vc=Number(row[cols.vc])||0,med=Number(row[cols.med])||0,acum=Number(row[cols.acum])||0;
+        let saldo=cols.saldo>=0?Number(row[cols.saldo]):0;if(!saldo&&vc>0)saldo=vc-acum;
+        const pct=vc>0?+(acum/vc*100).toFixed(2):0;
+        items.push({item:itemStr,descricao,valorContrato:+vc.toFixed(2),medicao:+med.toFixed(2),acumulado:+acum.toFixed(2),saldo:+saldo.toFixed(2),percentualExecutado:pct});
+      }
+      const st=items.reduce((a,i)=>a+i.valorContrato,0),sa=items.reduce((a,i)=>a+i.acumulado,0);
+      return {nome:fileBaseName(file.name),nomeProjeto:wb.Props?.Title||fileBaseName(file.name)||'Nova obra',medicaoAtual:target,itens:items,resumo:{total:st,acumulado:sa,percentual:st>0?+(sa/st*100).toFixed(2):0}};
+    }
+
+    function loadFromJsonOrExcel(replace=false){
+      const input=document.createElement('input');input.type='file';input.accept='.json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      input.onchange=async e=>{
+        if(!e.target.files.length) return;
+        const file=e.target.files[0];const ext=file.name.split('.').pop().toLowerCase();
+        try{
+          let obj,importedRows=[];
+          if(ext==='xlsx'){obj=await readExcelFile(file);importedRows=normalizeImportedRows(obj.itens);}
+          else{const text=await file.text();obj=JSON.parse(text);if(Array.isArray(obj))importedRows=normalizeImportedRows(obj);else if(Array.isArray(obj.itens))importedRows=normalizeImportedRows(obj.itens);else throw new Error('Formato inválido');}
+          const obraNome=fileBaseName(file.name)||obj.nome||'Nova obra';
+          const obraId=replace&&selectedObraId?selectedObraId:('obra_'+Date.now());
+          const obra={id:obraId,nome:obraNome,nomeProjeto:obj.nomeProjeto||obj.obra||obraNome,cliente:obj.cliente||'',arquivoNome:file.name,origem:ext,medicaoAtual:obj.medicaoAtual||obj.nome||'',itens:importedRows,resumo:obj.resumo||{percentual:0}};
+          await saveObraFirestore(obra);
+          selectedObraId=obraId;
+          alert('Arquivo importado com sucesso.');
+        }catch(err){console.error(err);alert('Erro ao importar: '+err.message);}
+      };input.click();
+    }
+
+    // ── eventos tabela ────────────────────────────────────────────────────────
+    let saveTimeout=null;
+    function scheduleSave(){ clearTimeout(saveTimeout); saveTimeout=setTimeout(async()=>{ const o=currentObra(); if(o){o.itens=rows;await saveObraFirestore(o);} },1000); }
+
+    $('tbody').addEventListener('input',e=>{const t=e.target,tr=t.closest('tr');if(!tr)return;const i=+tr.dataset.i,k=t.dataset.k;if(k){if(['valorContrato','medicao','acumulado','saldo','percentualExecutado'].includes(k))rows[i][k]=Number(t.textContent.replace(',','.').replace(/[^\d.-]/g,''))||0;else rows[i][k]=t.textContent.trim();updateDashboard();scheduleSave();}});
+    $('tbody').addEventListener('focusout',e=>{const t=e.target,tr=t.closest('tr');if(!tr)return;const i=+tr.dataset.i,k=t.dataset.k;if(k&&['valorContrato','medicao','acumulado','saldo'].includes(k))t.textContent=fmtMoney(rows[i][k]);else if(k==='percentualExecutado')t.textContent=Number(rows[i][k]).toFixed(2);});
+    $('tbody').addEventListener('click',e=>{const b=e.target.closest('button[data-del]');if(!b)return;rows.splice(+b.dataset.del,1);const o=currentObra();if(o){o.itens=rows;saveObraFirestore(o);}renderAll();});
+
+    $('addRow').onclick=()=>{rows.push({item:'',descricao:$('fName').value||'Nova atividade',valorContrato:0,medicao:0,acumulado:0,saldo:0,percentualExecutado:0});const o=currentObra();if(o){o.itens=rows;saveObraFirestore(o);}renderAll();};
+    $('fillSample').onclick=()=>{rows=[];const o=currentObra();if(o){o.itens=[];saveObraFirestore(o);}renderAll();};
+    $('loadFile').onclick=()=>loadFromJsonOrExcel(false);
+    $('addObraBtn').onclick=()=>loadFromJsonOrExcel(false);
+    $('toggleTheme').onclick=()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';if(rows.length)updateChart();};
+    $('exportCsv').onclick=()=>{const fields=['item','descricao','valorContrato','medicao','acumulado','saldo','percentualExecutado'];const body=rows.map(r=>fields.map(k=>`"${String(r[k]??'').replace(/"/g,'""')}"`).join(',')).join('\n');const blob=new Blob([fields.join(',')+'\n'+body],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cronograma.csv';a.click();URL.revokeObjectURL(a.href);};
+    $('saveJson').onclick=()=>{const o=currentObra();const name=($('projName').value.trim()||'projeto');const payload={obra:name,medicaoAtual:o?.medicaoAtual||'',itens:rows};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name.replace(/[^a-zA-Z0-9\-_]/g,'-').toLowerCase()+'.json';a.click();URL.revokeObjectURL(a.href);};
+
+    // init admin toggle
+    $('adminToggleColab').addEventListener('click',()=>{const p=$('adminColabPanel');p.style.display=p.style.display==='none'?'block':'none';});
+  </script>
+  <style>
+    :root{--bg:#f7f9fc;--surface:#fff;--surface-hover:#f1f5f9;--text:#0f172a;--text-muted:#64748b;--border:rgba(15,23,42,.1);--border-focus:#6366f1;--primary:#4f46e5;--primary-hover:#4338ca;--success:#10b981;--danger:#ef4444;--radius-sm:.5rem;--radius-md:.75rem;--radius-lg:1rem;--shadow-sm:0 1px 2px rgba(0,0,0,.05);--shadow-md:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -1px rgba(0,0,0,.06);--shadow-lg:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -2px rgba(0,0,0,.05);--font:'Satoshi',system-ui,sans-serif;}
+    [data-theme="dark"]{--bg:#0f172a;--surface:#1e293b;--surface-hover:#334155;--text:#f8fafc;--text-muted:#94a3b8;--border:rgba(255,255,255,.1);--border-focus:#818cf8;--primary:#6366f1;--primary-hover:#818cf8;}
+    *{box-sizing:border-box;margin:0;padding:0}body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;min-height:100vh;transition:background .2s}
+    .login-wrapper{display:flex;min-height:100vh;align-items:center;justify-content:center;padding:1rem;background:linear-gradient(135deg,#f3e8ff,#eff6ff 45%,#ecfdf5)}
+    [data-theme="dark"] .login-wrapper{background:linear-gradient(135deg,#1e1b4b,#172554 45%,#064e3b)}
+    .login-card{background:var(--surface);width:100%;max-width:400px;padding:2.5rem;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);border:1px solid var(--border)}
+    .brand-login{display:flex;flex-direction:column;align-items:center;gap:1rem;margin-bottom:2rem;text-align:center}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.625rem 1.25rem;border-radius:var(--radius-sm);font-weight:600;font-size:.875rem;font-family:inherit;cursor:pointer;transition:all .2s;border:1px solid transparent}
+    .btn-primary{background:var(--primary);color:#fff;box-shadow:var(--shadow-sm)}.btn-primary:hover{background:var(--primary-hover);transform:translateY(-1px)}.btn-primary:disabled{opacity:.7;cursor:not-allowed;transform:none}
+    .btn-sec{background:var(--surface);color:var(--text);border-color:var(--border)}.btn-sec:hover{background:var(--surface-hover)}
+    .btn-danger{color:var(--danger);background:rgba(239,68,68,.1)}.btn-danger:hover{background:rgba(239,68,68,.2)}
+    .container{max-width:1440px;margin:0 auto;padding:2rem}
+    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:1rem}
+    .brand{display:flex;align-items:center;gap:1rem}
+    .logo{width:48px;height:48px;background:linear-gradient(135deg,var(--primary),#818cf8);color:#fff;border-radius:var(--radius-md);display:grid;place-items:center;font-weight:900;font-size:1.25rem;box-shadow:var(--shadow-md)}
+    .logo-large{width:64px;height:64px;font-size:1.5rem}
+    .brand-text h1{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}.brand-text p{color:var(--text-muted);font-size:.875rem}
+    .dashboard{display:grid;grid-template-columns:260px 1fr;gap:2rem}@media(max-width:1024px){.dashboard{grid-template-columns:1fr}}
+    .panel{background:var(--surface);border-radius:var(--radius-lg);border:1px solid var(--border);box-shadow:var(--shadow-sm);padding:1.5rem;margin-bottom:1.5rem}
+    .nav{display:flex;flex-direction:column;gap:.5rem;position:sticky;top:2rem}
+    .nav-item{display:flex;justify-content:space-between;padding:.75rem 1rem;border-radius:var(--radius-sm);font-weight:500;color:var(--text-muted)}
+    .nav-item.active{background:rgba(99,102,241,.1);color:var(--primary);font-weight:700}
+    .badge{background:var(--surface-hover);padding:.125rem .5rem;border-radius:999px;font-size:.75rem;border:1px solid var(--border)}
+    .nav-item.active .badge{background:#fff;color:var(--primary);border-color:transparent}
+    .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}
+    .form-group{display:flex;flex-direction:column;gap:.375rem;margin-bottom:1rem}
+    .form-group label{font-size:.8125rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
+    .form-control{padding:.625rem .875rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:.875rem;transition:.2s;outline:none;width:100%}
+    .form-control:focus{border-color:var(--border-focus);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:var(--surface)}
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:1.5rem}
+    .stat-card{background:var(--surface);padding:1.25rem;border-radius:var(--radius-lg);border:1px solid var(--border);display:flex;flex-direction:column;gap:.25rem}
+    .stat-value{font-size:2rem;font-weight:900;line-height:1;color:var(--text)}.stat-label{font-size:.875rem;color:var(--text-muted);font-weight:500}
+    .chart-container{height:280px;width:100%;position:relative}
+    .table-container{overflow-x:auto;margin-top:1rem}
+    table{width:100%;border-collapse:separate;border-spacing:0}
+    th{text-align:left;padding:1rem;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);border-bottom:1px solid var(--border);background:rgba(0,0,0,.02)}
+    td{padding:1rem;font-size:.875rem;border-bottom:1px solid var(--border);transition:background .2s}
+    tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--surface-hover)}
+    td[contenteditable="true"]{outline:none;cursor:text}td[contenteditable="true"]:focus{background:var(--bg);box-shadow:inset 0 0 0 2px var(--primary);border-radius:4px}
+    .flex-between{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem}.mt-4{margin-top:1rem}.mb-4{margin-bottom:1rem}
+    .error-msg{color:var(--danger);font-size:.875rem;margin-top:.5rem;display:none}
+    /* admin */
+    .obra-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;margin-bottom:1rem;box-shadow:var(--shadow-sm)}
+    .obra-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.75rem}
+    .obra-card-title{font-weight:700;font-size:1rem}
+    .obra-card-sub{font-size:.8rem;color:var(--text-muted);margin-top:.25rem}
+    .obra-card-pct{font-size:1.5rem;font-weight:900;color:var(--primary);white-space:nowrap}
+    .obra-progress-bar{height:6px;background:var(--surface-hover);border-radius:999px;overflow:hidden;margin-bottom:.75rem}
+    .obra-progress-fill{height:100%;background:var(--primary);border-radius:999px;transition:width .4s}
+    .obra-card-footer{display:flex;gap:1.5rem;flex-wrap:wrap;font-size:.8125rem;color:var(--text-muted)}
+    .colab-item{display:flex;justify-content:space-between;align-items:center;padding:.75rem;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:.5rem;background:var(--bg)}
+    .spinner{width:20px;height:20px;border:3px solid rgba(255,255,255,.3);border-radius:50%;border-top-color:#fff;animation:spin 1s ease-in-out infinite;display:none}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════ LOGIN ═══════════════ -->
+<div id="loginView" class="login-wrapper">
+  <div class="login-card">
+    <div class="brand-login">
+      <div class="logo logo-large">CA</div>
+      <div><h1 style="font-size:1.5rem;font-weight:700">Cronograma PRO</h1><p style="color:var(--text-muted);font-size:.875rem">Acesse sua conta</p></div>
+    </div>
+    <form id="loginForm">
+      <div class="form-group"><label>E-mail</label><input type="email" id="loginEmail" class="form-control" placeholder="seu@email.com" required></div>
+      <div class="form-group"><label>Senha</label><input type="password" id="loginSenha" class="form-control" placeholder="••••••••" required></div>
+      <div id="loginError" class="error-msg"></div>
+      <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%;padding:.875rem;margin-top:.75rem">Entrar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════════ ADMIN VIEW ═══════════════ -->
+<div id="adminView" style="display:none">
+  <div class="container">
+    <header class="header">
+      <div class="brand"><div class="logo">CA</div><div class="brand-text"><h1>Cronograma PRO</h1><p>Visão Geral — Painel do Chefe</p></div></div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-sec" id="adminToggleColab">👥 Gerenciar Colaboradores</button>
+        <button class="btn btn-sec" id="toggleThemeAdmin" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'">Tema</button>
+        <button class="btn btn-sec" id="logoutBtnAdmin" style="color:var(--danger)">Sair</button>
+      </div>
+    </header>
+
+    <!-- painel colaboradores (oculto por padrão) -->
+    <div id="adminColabPanel" class="panel" style="display:none">
+      <div class="flex-between mb-4"><h2>👥 Colaboradores</h2></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;flex-wrap:wrap">
+        <div>
+          <h3 style="font-size:.9rem;margin-bottom:1rem;color:var(--text-muted)">CADASTRAR NOVO COLABORADOR</h3>
+          <form id="addColabForm">
+            <div class="form-group"><label>Nome</label><input type="text" id="colabNome" class="form-control" placeholder="Ex.: João Silva" required></div>
+            <div class="form-group"><label>E-mail</label><input type="email" id="colabEmail" class="form-control" placeholder="joao@email.com" required></div>
+            <div class="form-group"><label>Senha</label><input type="password" id="colabSenha" class="form-control" placeholder="mínimo 6 caracteres" minlength="6" required></div>
+            <button type="submit" class="btn btn-primary" id="addColabBtn" style="width:100%">Cadastrar colaborador</button>
+          </form>
+        </div>
+        <div>
+          <h3 style="font-size:.9rem;margin-bottom:1rem;color:var(--text-muted)">COLABORADORES ATIVOS</h3>
+          <div id="colabList"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="adminStats"></div>
+    <div class="panel">
+      <div class="flex-between mb-4"><h2>📋 Todas as Obras</h2></div>
+      <div id="adminObrasList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ COLABORADOR VIEW ═══════════════ -->
+<div id="appView" style="display:none">
+  <div class="container">
+    <header class="header">
+      <div class="brand"><div class="logo">CA</div><div class="brand-text"><h1>Cronograma PRO</h1><p>Minhas Obras</p></div></div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-sec" id="toggleTheme">Tema</button>
+        <button class="btn btn-sec" id="logoutBtnUser" style="color:var(--danger)">Sair</button>
+      </div>
+    </header>
+    <div class="dashboard">
+      <aside>
+        <div class="nav">
+          <div class="nav-item active"><span>Dashboard</span><span class="badge" id="countAll">0</span></div>
+          <div class="nav-item"><span>Concluídas</span><span class="badge" id="countDone" style="color:var(--success)">0</span></div>
+          <div class="nav-item"><span>Progresso</span><span class="badge" id="countPct">0%</span></div>
+          <div class="panel mt-4" style="padding:1rem">
+            <h3 style="font-size:.875rem;margin-bottom:1rem;color:var(--text-muted)">AÇÕES DE ARQUIVO</h3>
+            <div style="display:flex;flex-direction:column;gap:.5rem">
+              <button class="btn btn-sec" id="loadFile" style="width:100%">Importar arquivo</button>
+              <button class="btn btn-primary" id="saveJson" style="width:100%">Exportar JSON</button>
+            </div>
+          </div>
+          <div class="panel" style="padding:1rem;margin-top:0">
+            <h3 style="font-size:.875rem;margin-bottom:1rem;color:var(--text-muted)">OBRAS SALVAS</h3>
+            <div id="obrasBox" style="display:flex;flex-direction:column;gap:.75rem"></div>
+            <div style="margin-top:1rem"><button class="btn btn-primary" id="addObraBtn" style="width:100%">Adicionar nova obra</button></div>
+          </div>
+        </div>
+      </aside>
+      <main>
+        <div class="panel"><div class="flex-between mb-4"><h2>Configurações do Projeto</h2></div><div class="form-grid"><div class="form-group" style="grid-column:1/-1"><label>Nome do Projeto</label><input type="text" id="projName" class="form-control" placeholder="Nome do projeto"></div><div class="form-group"><label>Cliente / Setor</label><input type="text" id="projClient" class="form-control" placeholder="Ex.: Diretoria de Obras"></div><div class="form-group"><label>Escopo / Fase</label><input type="text" id="projScope" class="form-control" placeholder="Ex.: BM 10"></div></div></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.5rem;margin-bottom:1.5rem">
+          <div class="panel" style="margin:0"><h2 class="mb-4">Nova Atividade</h2><div class="form-grid" style="grid-template-columns:1fr;margin-bottom:0"><div class="form-group" style="margin-bottom:.5rem"><label>Atividade</label><input type="text" id="fName" class="form-control" placeholder="Ex.: Alvenaria"></div></div><button class="btn btn-primary mt-4" id="addRow" style="width:100%">Adicionar Atividade</button></div>
+          <div class="panel" style="margin:0"><h2 class="mb-4">Curva S - Progresso Físico</h2><div class="chart-container"><canvas id="sCurveChart"></canvas></div></div>
+        </div>
+        <div class="stats-grid" id="stats"></div>
+        <div class="panel"><div class="flex-between"><h2>Índice / Itens Principais</h2><div><button class="btn btn-sec" id="fillSample" style="margin-right:.5rem">Limpar</button><button class="btn btn-sec" id="exportCsv">Exportar CSV</button></div></div><div class="table-container"><table><thead><tr><th>Item</th><th>Descrição</th><th style="text-align:right">Valor Contrato</th><th style="text-align:right">Medição</th><th style="text-align:right">Acumulado</th><th style="text-align:right">Saldo</th><th style="text-align:right">% Executada</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div></div>
+      </main>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
