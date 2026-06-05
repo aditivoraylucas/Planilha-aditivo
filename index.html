@@ -2,7 +2,7 @@
 <html lang="pt-BR" data-theme="light">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>Cronograma PRO</title>
   <link rel="preconnect" href="https://api.fontshare.com">
   <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet">
@@ -85,6 +85,8 @@
 
     $('logoutBtnAdmin').addEventListener('click', () => { cleanupListeners(); signOut(auth); });
     $('logoutBtnUser' ).addEventListener('click', () => { cleanupListeners(); signOut(auth); });
+    $('homeBtnAdmin').addEventListener('click', () => { window.scrollTo({top:0,behavior:'smooth'}); });
+    $('homeBtnUser' ).addEventListener('click', () => { window.scrollTo({top:0,behavior:'smooth'}); });
 
     function cleanupListeners(){
       if(unsubObras) unsubObras();
@@ -158,6 +160,24 @@
       const box=$('adminColabSidebar'); if(!box) return;
       const colabs=Object.entries(allUsersData).filter(([,u])=>u.role!=='admin');
       if(!colabs.length){ box.innerHTML='<p style="color:var(--text-muted);font-size:.8rem;padding:.5rem">Nenhum colaborador ainda.</p>'; return; }
+
+      // No mobile (<=1100px): exibe só o colaborador selecionado como chip compacto
+      const isMobileLayout = window.innerWidth <= 1100;
+      if(isMobileLayout && adminSelectedUid){
+        const u = allUsersData[adminSelectedUid];
+        if(u){
+          const lockIcon = u.blocked ? '🔒 ' : '';
+          box.innerHTML=`
+            <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.4rem">Visualizando:</div>
+            <div class="colab-sidebar-item active" style="margin-bottom:.5rem">
+              <div style="font-weight:600;font-size:.875rem">${lockIcon}${esc(u.nome)}</div>
+              <div style="font-size:.75rem;color:var(--text-muted)">${(u.obras||[]).length} obra${(u.obras||[]).length!==1?'s':''}</div>
+            </div>
+            <button class="btn btn-sec" style="width:100%;font-size:.75rem;padding:.4rem" onclick="adminSelectedUid=null;adminSelectedObraId=null;renderAdminColabSidebar();renderAdminObraDetail()">← Ver todos</button>`;
+          return;
+        }
+      }
+
       box.innerHTML=colabs.map(([uid,u])=>{
         const n=(u.obras||[]).length, active=uid===adminSelectedUid;
         const lockIcon = u.blocked ? '🔒 ' : '';
@@ -463,402 +483,4 @@
       $('deleteObraBtn').onclick=async()=>{if(!selectedObraId||!confirm('Remover obra?'))return;await deleteObraFirestore(selectedObraId);selectedObraId=null;};
     }
 
-    function renderTable(){$('tbody').innerHTML=rows.map((r,i)=>`<tr data-i="${i}"><td contenteditable="true" data-k="item">${esc(r.item)}</td><td contenteditable="true" data-k="descricao">${esc(r.descricao)}</td><td contenteditable="true" data-k="valorContrato" style="text-align:right">${fmtMoney(r.valorContrato)}</td><td contenteditable="true" data-k="medicao" style="text-align:right">${fmtMoney(r.medicao)}</td><td contenteditable="true" data-k="acumulado" style="text-align:right">${fmtMoney(r.acumulado)}</td><td contenteditable="true" data-k="saldo" style="text-align:right">${fmtMoney(r.saldo)}</td><td contenteditable="true" data-k="percentualExecutado" style="text-align:right;font-weight:700">${Number(r.percentualExecutado||0).toFixed(2)}</td><td style="text-align:right"><button data-del="${i}" class="btn btn-danger" style="padding:.4rem;border-radius:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events:none"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></td></tr>`).join('');}
-
-    function updateChart(){const ctx=$('sCurveChart').getContext('2d');if(chartInstance)chartInstance.destroy();const theme=document.documentElement.dataset.theme,gc=theme==='dark'?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)',tc=theme==='dark'?'#94a3b8':'#64748b';chartInstance=new Chart(ctx,{type:'bar',data:{labels:rows.map(r=>String(r.item||'')),datasets:[{label:'% Executado',data:rows.map(r=>Number(r.percentualExecutado)||0),backgroundColor:'rgba(99,102,241,0.2)',borderColor:'#6366f1',borderWidth:1,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100,grid:{color:gc},ticks:{color:tc,callback:v=>v+'%'}},x:{grid:{display:false},ticks:{color:tc}}},plugins:{legend:{labels:{color:tc}}}}});}
-
-    function updateDashboard(){
-      const o = currentObra();
-      const vcAditivo = Number(o?.resumo?.valorContratoAditivo) || rows.reduce((a,r)=>a+(Number(r.valorContrato)||0),0);
-      const acumTotal = Number(o?.resumo?.acumuladoTotal)       || rows.reduce((a,r)=>a+(Number(r.acumulado)||0),0);
-      const pct = calcPctGeral(o?.resumo, rows);
-      $('stats').innerHTML=`
-        <div class="stat-card">
-          <span class="stat-label">Valor CT / Aditivo</span>
-          <span class="stat-value" style="font-size:1rem">${fmtMoney(vcAditivo)}</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">Acumulado Total</span>
-          <span class="stat-value" style="font-size:1rem;color:var(--success)">${fmtMoney(acumTotal)}</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">% Geral</span>
-          <span class="stat-value">${pct.toFixed(2)}%</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">Medição Atual</span>
-          <span class="stat-value" style="font-size:1.2rem">${esc(o?.medicaoAtual||'-')}</span>
-        </div>`;
-      $('countAll').textContent = fmtMoney(vcAditivo);
-      $('countDone').textContent = fmtMoney(acumTotal);
-      $('countPct').textContent  = pct.toFixed(2)+'%';
-      updateChart();
-    }
-
-    function renderAll(){renderObrasBox();renderTable();updateDashboard();}
-
-    function normalizeImportedRows(list){if(!Array.isArray(list))return[];return list.map(item=>({item:item?.item??'',descricao:item?.descricao??item?.descricaoServico??item?.name??'',valorContrato:Number(item?.valorContrato??item?.valor_contrato??0)||0,medicao:Number(item?.medicao??0)||0,acumulado:Number(item?.acumulado??0)||0,saldo:Number(item?.saldo??0)||0,percentualExecutado:Number(item?.percentualExecutado??item?.percentual_executado??0)||0}));}
-
-    const RE_VCA = /valor\s*(ct|contrato)\s*[\/\-]?\s*(ta|aditiv|reajust|atualiz)?/i;
-    const RE_ACUM_LABEL = /^acumulado$/i;
-
-    function extractHeaderValues(data, dataStart){
-      let valorContratoAditivo = 0;
-      let acumuladoTotal = 0;
-      const headerRows = data.slice(0, dataStart < 0 ? data.length : dataStart);
-      for(let r=0; r<headerRows.length; r++){
-        const row = headerRows[r] || [];
-        for(let c=0; c<row.length; c++){
-          const cell = String(row[c]??'').trim();
-          if(!valorContratoAditivo && RE_VCA.test(cell)){
-            for(let cc=c+1; cc<Math.min(c+9, row.length); cc++){
-              const v = Number(row[cc]);
-              if(v > 10000){ valorContratoAditivo = v; break; }
-            }
-            if(!valorContratoAditivo){
-              const nr = headerRows[r+1] || [];
-              for(let cc=c; cc<Math.min(c+7, nr.length); cc++){
-                const v = Number(nr[cc]);
-                if(v > 10000){ valorContratoAditivo = v; break; }
-              }
-            }
-          }
-          if(!acumuladoTotal && RE_ACUM_LABEL.test(cell)){
-            const nr = headerRows[r+1] || [];
-            for(let cc=c; cc<Math.min(c+4, nr.length); cc++){
-              const v = Number(nr[cc]);
-              if(v > 10000){ acumuladoTotal = v; break; }
-            }
-          }
-        }
-      }
-      return { valorContratoAditivo, acumuladoTotal };
-    }
-
-    async function readExcelFile(file){
-      if(!file)throw new Error('Nenhum arquivo fornecido.');
-      const buffer=await file.arrayBuffer();
-      const wb=XLSX.read(new Uint8Array(buffer),{type:'array',cellDates:false});
-      const target=wb.SheetNames.filter(n=>/^(BM|MED)\s*\d+/i.test(n)).sort((a,b)=>parseInt(a.match(/\d+/)?.[0]||0)-parseInt(b.match(/\d+/)?.[0]||0)).at(-1)||wb.SheetNames.at(-1);
-      if(!target)throw new Error('Nenhuma aba encontrada.');
-      const ws=wb.Sheets[target];
-      const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
-      const RE={desc:/discrimina|descri|servico/,vc:/valor.{0,25}contrato|total.{0,25}contrato/,med:/no.{0,10}period|no.{0,10}mes|^medicao$|^realizado$|periodo/,acum:/acumulado/,saldo:/^saldo$/};
-      let cols={desc:-1,vc:-1,med:-1,acum:-1,saldo:-1},dataStart=-1;
-      for(let r=0;r<data.length;r++){
-        const row=data[r]||[];
-        if(/^\d+$/.test(String(row[0]??'').trim())){dataStart=r;break;}
-        for(let c=0;c<row.length;c++){const t=norm(row[c]);if(!t)continue;if(RE.desc.test(t))cols.desc=c;if(RE.vc.test(t))cols.vc=c;if(RE.med.test(t))cols.med=c;if(RE.acum.test(t))cols.acum=c;if(RE.saldo.test(t))cols.saldo=c;}
-      }
-      if(cols.vc<0&&dataStart>=0){const fr=data[dataStart]||[];const nc=[];for(let c=1;c<fr.length;c++)if(isNum(fr[c]))nc.push(c);const vi=nc.findIndex(c=>Number(fr[c])>0);if(vi>=0){cols.vc=nc[vi];if(cols.med<0)cols.med=nc[vi+1]??cols.vc+1;if(cols.acum<0)cols.acum=nc[vi+2]??cols.vc+2;if(cols.saldo<0)cols.saldo=nc[vi+3]??cols.vc+3;}else{cols.vc=12;cols.med=13;cols.acum=14;cols.saldo=15;}}
-      const items=[];
-      for(let r=0;r<data.length;r++){
-        const row=data[r]||[];const itemStr=String(row[0]??'').trim();if(!/^\d+$/.test(itemStr))continue;
-        let descricao='';if(cols.desc>=0)descricao=String(row[cols.desc]??'').trim();
-        if(!descricao){const lim=cols.vc>0?cols.vc:10;for(let c=1;c<lim;c++){const v=String(row[c]??'').trim();if(v&&!isNum(row[c])){descricao=v;break;}}}
-        const vc=Number(row[cols.vc])||0,med=Number(row[cols.med])||0,acum=Number(row[cols.acum])||0;
-        let saldo=cols.saldo>=0?Number(row[cols.saldo]):0;if(!saldo&&vc>0)saldo=vc-acum;
-        const pct=vc>0?+(acum/vc*100).toFixed(2):0;
-        items.push({item:itemStr,descricao,valorContrato:+vc.toFixed(2),medicao:+med.toFixed(2),acumulado:+acum.toFixed(2),saldo:+saldo.toFixed(2),percentualExecutado:pct});
-      }
-      const st = items.reduce((a,i)=>a+i.valorContrato,0);
-      const sa = items.reduce((a,i)=>a+i.acumulado,0);
-      const hv = extractHeaderValues(data, dataStart);
-      const vca = hv.valorContratoAditivo || st;
-      const acu = hv.acumuladoTotal || sa;
-      return{
-        nome:fileBaseName(file.name),
-        nomeProjeto:wb.Props?.Title||fileBaseName(file.name)||'Nova obra',
-        medicaoAtual:target,
-        itens:items,
-        resumo:{
-          total: st,
-          acumulado: sa,
-          percentual: vca > 0 ? +(acu/vca*100).toFixed(2) : 0,
-          valorContratoAditivo: vca,
-          acumuladoTotal: acu
-        }
-      };
-    }
-
-    function loadFromJsonOrExcel(replace=false){
-      const input=document.createElement('input');input.type='file';input.accept='.json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      input.onchange=async e=>{
-        if(!e.target.files.length)return;
-        const file=e.target.files[0];const ext=file.name.split('.').pop().toLowerCase();
-        try{
-          let obj,importedRows=[];
-          if(ext==='xlsx'){obj=await readExcelFile(file);importedRows=normalizeImportedRows(obj.itens);}
-          else{const text=await file.text();obj=JSON.parse(text);if(Array.isArray(obj))importedRows=normalizeImportedRows(obj);else if(Array.isArray(obj.itens))importedRows=normalizeImportedRows(obj.itens);else throw new Error('Formato inválido');}
-          const obraNome=fileBaseName(file.name)||obj.nome||'Nova obra';
-          const obraId=replace&&selectedObraId?selectedObraId:('obra_'+Date.now());
-          const obra={id:obraId,nome:obraNome,nomeProjeto:obj.nomeProjeto||obj.obra||obraNome,cliente:obj.cliente||'',arquivoNome:file.name,origem:ext,medicaoAtual:obj.medicaoAtual||obj.nome||'',itens:importedRows,resumo:obj.resumo||{percentual:0}};
-          await saveObraFirestore(obra);
-          selectedObraId=obraId;
-          alert('Arquivo importado com sucesso.');
-        }catch(err){console.error(err);alert('Erro ao importar: '+err.message);}
-      };input.click();
-    }
-
-    let saveTimeout=null;
-    function scheduleSave(){clearTimeout(saveTimeout);saveTimeout=setTimeout(async()=>{const o=currentObra();if(o){o.itens=rows;await saveObraFirestore(o);}},1000);}
-
-    $('tbody').addEventListener('input',e=>{const t=e.target,tr=t.closest('tr');if(!tr)return;const i=+tr.dataset.i,k=t.dataset.k;if(k){if(['valorContrato','medicao','acumulado','saldo','percentualExecutado'].includes(k))rows[i][k]=Number(t.textContent.replace(',','.').replace(/[^\d.-]/g,''))||0;else rows[i][k]=t.textContent.trim();updateDashboard();scheduleSave();}});
-    $('tbody').addEventListener('focusout',e=>{const t=e.target,tr=t.closest('tr');if(!tr)return;const i=+tr.dataset.i,k=t.dataset.k;if(k&&['valorContrato','medicao','acumulado','saldo'].includes(k))t.textContent=fmtMoney(rows[i][k]);else if(k==='percentualExecutado')t.textContent=Number(rows[i][k]).toFixed(2);});
-    $('tbody').addEventListener('click',e=>{const b=e.target.closest('button[data-del]');if(!b)return;rows.splice(+b.dataset.del,1);const o=currentObra();if(o){o.itens=rows;saveObraFirestore(o);}renderAll();});
-
-    $('addRow').onclick=()=>{rows.push({item:'',descricao:$('fName').value||'Nova atividade',valorContrato:0,medicao:0,acumulado:0,saldo:0,percentualExecutado:0});const o=currentObra();if(o){o.itens=rows;saveObraFirestore(o);}renderAll();};
-    $('fillSample').onclick=()=>{rows=[];const o=currentObra();if(o){o.itens=[];saveObraFirestore(o);}renderAll();};
-    $('loadFile').onclick=()=>loadFromJsonOrExcel(false);
-    $('addObraBtn').onclick=()=>loadFromJsonOrExcel(false);
-    $('toggleTheme').onclick=()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';if(rows.length)updateChart();};
-    $('exportCsv').onclick=()=>{const fields=['item','descricao','valorContrato','medicao','acumulado','saldo','percentualExecutado'];const body=rows.map(r=>fields.map(k=>`"${String(r[k]??'').replace(/"/g,'""')}"`).join(',')).join('\n');const blob=new Blob([fields.join(',')+'\n'+body],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cronograma.csv';a.click();URL.revokeObjectURL(a.href);};
-    $('saveJson').onclick=()=>{const o=currentObra();const name=($('projName').value.trim()||'projeto');const payload={obra:name,medicaoAtual:o?.medicaoAtual||'',itens:rows};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name.replace(/[^a-zA-Z0-9\-_]/g,'-').toLowerCase()+'.json';a.click();URL.revokeObjectURL(a.href);};
-  </script>
-  <style>
-    :root{--bg:#f7f9fc;--surface:#fff;--surface-hover:#f1f5f9;--text:#0f172a;--text-muted:#64748b;--border:rgba(15,23,42,.1);--border-focus:#6366f1;--primary:#4f46e5;--primary-hover:#4338ca;--success:#10b981;--danger:#ef4444;--warning:#f59e0b;--radius-sm:.5rem;--radius-md:.75rem;--radius-lg:1rem;--shadow-sm:0 1px 2px rgba(0,0,0,.05);--shadow-md:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -1px rgba(0,0,0,.06);--shadow-lg:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -2px rgba(0,0,0,.05);--font:'Satoshi',system-ui,sans-serif;}
-    [data-theme="dark"]{--bg:#0f172a;--surface:#1e293b;--surface-hover:#334155;--text:#f8fafc;--text-muted:#94a3b8;--border:rgba(255,255,255,.1);--border-focus:#818cf8;--primary:#6366f1;--primary-hover:#818cf8;}
-    *{box-sizing:border-box;margin:0;padding:0}body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;min-height:100vh;transition:background .2s}
-    .login-wrapper{display:flex;min-height:100vh;align-items:center;justify-content:center;padding:1rem;background:linear-gradient(135deg,#f3e8ff,#eff6ff 45%,#ecfdf5)}
-    [data-theme="dark"] .login-wrapper{background:linear-gradient(135deg,#1e1b4b,#172554 45%,#064e3b)}
-    .login-card{background:var(--surface);width:100%;max-width:400px;padding:2.5rem;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);border:1px solid var(--border)}
-    .brand-login{display:flex;flex-direction:column;align-items:center;gap:1rem;margin-bottom:2rem;text-align:center}
-    .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.625rem 1.25rem;border-radius:var(--radius-sm);font-weight:600;font-size:.875rem;font-family:inherit;cursor:pointer;transition:all .2s;border:1px solid transparent}
-    .btn-primary{background:var(--primary);color:#fff;box-shadow:var(--shadow-sm)}.btn-primary:hover{background:var(--primary-hover);transform:translateY(-1px)}.btn-primary:disabled{opacity:.7;cursor:not-allowed;transform:none}
-    .btn-sec{background:var(--surface);color:var(--text);border-color:var(--border)}.btn-sec:hover{background:var(--surface-hover)}
-    .btn-danger{color:var(--danger);background:rgba(239,68,68,.1)}.btn-danger:hover{background:rgba(239,68,68,.2)}
-    .btn-warning{color:#92400e;background:rgba(245,158,11,.12)}.btn-warning:hover{background:rgba(245,158,11,.22)}
-    .btn-success{color:#065f46;background:rgba(16,185,129,.12)}.btn-success:hover{background:rgba(16,185,129,.22)}
-    [data-theme="dark"] .btn-warning{color:#fcd34d}[data-theme="dark"] .btn-success{color:#6ee7b7}
-    .container{max-width:1440px;margin:0 auto;padding:2rem}
-    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:1rem}
-    .brand{display:flex;align-items:center;gap:1rem}
-    .logo{width:48px;height:48px;background:linear-gradient(135deg,var(--primary),#818cf8);color:#fff;border-radius:var(--radius-md);display:grid;place-items:center;font-weight:900;font-size:1.25rem;box-shadow:var(--shadow-md)}
-    .logo-large{width:64px;height:64px;font-size:1.5rem}
-    .brand-text h1{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}.brand-text p{color:var(--text-muted);font-size:.875rem}
-
-    /* ── Admin layout ── */
-    .admin-layout{display:grid;grid-template-columns:220px 1fr;gap:1.5rem;align-items:start}
-    .admin-sidebar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1rem;position:sticky;top:1.5rem}
-    .admin-sidebar h3{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:.75rem}
-    .colab-sidebar-item{padding:.75rem;border-radius:var(--radius-sm);cursor:pointer;border:1px solid transparent;margin-bottom:.375rem;transition:.15s}
-    .colab-sidebar-item:hover{background:var(--surface-hover)}
-    .colab-sidebar-item.active{background:rgba(99,102,241,.1);border-color:var(--primary);color:var(--primary)}
-
-    /* ── Cards 4x2 admin ── */
-    .admin-stats-grid{
-      display:grid;
-      grid-template-columns:repeat(4, minmax(0, 1fr));
-      gap:1rem;
-      margin-bottom:1.5rem;
-    }
-    .stat-card.compact{
-      min-height:100px;
-      padding:1rem 1.1rem;
-      justify-content:space-between;
-    }
-    .stat-card.compact .stat-value{
-      font-size:1.2rem;
-      line-height:1.1;
-    }
-    .stat-card.compact .stat-label{
-      font-size:.75rem;
-      font-weight:600;
-      text-transform:uppercase;
-      letter-spacing:.04em;
-    }
-
-    /* ── Grid stats geral ── */
-    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:1.5rem}
-    .stat-card{background:var(--surface);padding:1.25rem;border-radius:var(--radius-lg);border:1px solid var(--border);display:flex;flex-direction:column;gap:.25rem;box-shadow:var(--shadow-sm)}
-    .stat-value{font-size:2rem;font-weight:900;line-height:1;color:var(--text)}.stat-label{font-size:.875rem;color:var(--text-muted);font-weight:500}
-
-    /* ── Dashboard colaborador ── */
-    .dashboard{display:grid;grid-template-columns:260px 1fr;gap:2rem}
-    .panel{background:var(--surface);border-radius:var(--radius-lg);border:1px solid var(--border);box-shadow:var(--shadow-sm);padding:1.5rem;margin-bottom:1.5rem}
-    .nav{display:flex;flex-direction:column;gap:.5rem;position:sticky;top:2rem}
-    .nav-item{display:flex;justify-content:space-between;padding:.75rem 1rem;border-radius:var(--radius-sm);font-weight:500;color:var(--text-muted)}
-    .nav-item.active{background:rgba(99,102,241,.1);color:var(--primary);font-weight:700}
-    .badge{background:var(--surface-hover);padding:.125rem .5rem;border-radius:999px;font-size:.75rem;border:1px solid var(--border);white-space:nowrap}
-    .nav-item.active .badge{background:#fff;color:var(--primary);border-color:transparent}
-    .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}
-    .form-group{display:flex;flex-direction:column;gap:.375rem;margin-bottom:1rem}
-    .form-group label{font-size:.8125rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
-    .form-control{padding:.625rem .875rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:.875rem;transition:.2s;outline:none;width:100%}
-    .form-control:focus{border-color:var(--border-focus);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:var(--surface)}
-    .chart-container{height:280px;width:100%;position:relative}
-
-    /* ── Tabela ── */
-    .table-container{overflow-x:auto;margin-top:1rem;-webkit-overflow-scrolling:touch;border-radius:var(--radius-md)}
-    table{width:100%;border-collapse:separate;border-spacing:0;min-width:780px}
-    th{text-align:left;padding:1rem;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);border-bottom:1px solid var(--border);background:rgba(0,0,0,.02);position:sticky;top:0;z-index:1}
-    td{padding:1rem;font-size:.875rem;border-bottom:1px solid var(--border);transition:background .2s}
-    tr:last-child td{border-bottom:none}tbody tr:hover td{background:var(--surface-hover)}
-    td[contenteditable="true"]{outline:none;cursor:text}td[contenteditable="true"]:focus{background:var(--bg);box-shadow:inset 0 0 0 2px var(--primary);border-radius:4px}
-    .flex-between{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem}.mt-4{margin-top:1rem}.mb-4{margin-bottom:1rem}
-    .error-msg{color:var(--danger);font-size:.875rem;margin-top:.5rem;display:none;padding:.5rem;background:rgba(239,68,68,.08);border-radius:var(--radius-sm)}
-    .obra-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;margin-bottom:1rem;box-shadow:var(--shadow-sm)}
-    .obra-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.75rem}
-    .obra-card-title{font-weight:700;font-size:1rem}
-    .obra-card-sub{font-size:.8rem;color:var(--text-muted);margin-top:.25rem}
-    .obra-card-pct{font-size:1.5rem;font-weight:900;color:var(--primary);white-space:nowrap}
-    .obra-progress-bar{height:6px;background:var(--surface-hover);border-radius:999px;overflow:hidden;margin-bottom:.75rem}
-    .obra-progress-fill{height:100%;background:var(--primary);border-radius:999px;transition:width .4s}
-    .obra-card-footer{display:flex;gap:1.5rem;flex-wrap:wrap;font-size:.8125rem;color:var(--text-muted)}
-    .colab-item{display:flex;justify-content:space-between;align-items:center;padding:.75rem;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:.5rem;background:var(--bg);gap:.5rem;flex-wrap:wrap}
-
-    /* ══════════════════════════════════════════
-       RESPONSIVO — tablet (≤ 1100px)
-    ══════════════════════════════════════════ */
-    @media(max-width:1100px){
-      .admin-layout{grid-template-columns:1fr}
-      .admin-sidebar{position:static}
-      .admin-stats-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
-      .dashboard{grid-template-columns:1fr}
-    }
-
-    /* ══════════════════════════════════════════
-       RESPONSIVO — mobile (≤ 640px)
-    ══════════════════════════════════════════ */
-    @media(max-width:640px){
-      .container{padding:1rem}
-      .header{margin-bottom:1.25rem}
-      .header .brand-text h1{font-size:1.15rem}
-      .header div[style*="flex"]{gap:.35rem}
-      .btn{padding:.5rem .85rem;font-size:.8rem}
-
-      .admin-stats-grid{
-        grid-template-columns:repeat(2, minmax(0, 1fr));
-        gap:.75rem;
-        margin-bottom:1rem;
-      }
-      .stat-card.compact{min-height:88px;padding:.85rem}
-      .stat-card.compact .stat-value{font-size:1rem}
-      .stat-card.compact .stat-label{font-size:.7rem}
-
-      .stats-grid{grid-template-columns:repeat(2, minmax(0, 1fr));gap:.75rem}
-      .stat-value{font-size:1.4rem}
-
-      .panel{padding:1rem;margin-bottom:1rem}
-      .obra-card{padding:1rem}
-      .obra-card-pct{font-size:1.2rem}
-      .obra-card-footer{gap:.75rem;font-size:.75rem}
-
-      table{min-width:700px}
-      th,td{padding:.75rem .65rem;font-size:.78rem;white-space:nowrap}
-
-      .admin-colabpanel-grid{grid-template-columns:1fr !important}
-    }
-  </style>
-</head>
-<body>
-
-<!-- LOGIN -->
-<div id="loginView" class="login-wrapper">
-  <div class="login-card">
-    <div class="brand-login">
-      <div class="logo logo-large">CA</div>
-      <div><h1 style="font-size:1.5rem;font-weight:700">Cronograma PRO</h1><p style="color:var(--text-muted);font-size:.875rem">Acesse sua conta</p></div>
-    </div>
-    <form id="loginForm">
-      <div class="form-group"><label>E-mail</label><input type="email" id="loginEmail" class="form-control" placeholder="seu@email.com" required></div>
-      <div class="form-group"><label>Senha</label><input type="password" id="loginSenha" class="form-control" placeholder="••••••••" required></div>
-      <div id="loginError" class="error-msg"></div>
-      <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%;padding:.875rem;margin-top:.75rem">Entrar</button>
-    </form>
-  </div>
-</div>
-
-<!-- ADMIN VIEW -->
-<div id="adminView" style="display:none">
-  <div class="container">
-    <header class="header">
-      <div class="brand"><div class="logo">CA</div><div class="brand-text"><h1>Cronograma PRO</h1><p>Painel do Chefe — Visão Geral</p></div></div>
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <button class="btn btn-sec" id="adminToggleColab">👥 Gerenciar Colaboradores</button>
-        <button class="btn btn-sec" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'">Tema</button>
-        <button class="btn btn-sec" id="logoutBtnAdmin" style="color:var(--danger)">Sair</button>
-      </div>
-    </header>
-
-    <div id="adminColabPanel" class="panel" style="display:none">
-      <div class="flex-between mb-4"><h2>👥 Gerenciar Colaboradores</h2></div>
-      <div class="admin-colabpanel-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:2rem">
-        <div>
-          <h3 style="font-size:.9rem;margin-bottom:.5rem;color:var(--text-muted)">CADASTRAR / REATIVAR COLABORADOR</h3>
-          <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:1rem">Para reativar um colaborador removido, informe o mesmo e-mail e defina uma nova senha.</p>
-          <form id="addColabForm">
-            <div class="form-group"><label>Nome</label><input type="text" id="colabNome" class="form-control" placeholder="Ex.: João Silva" required></div>
-            <div class="form-group"><label>E-mail</label><input type="email" id="colabEmail" class="form-control" placeholder="joao@email.com" required></div>
-            <div class="form-group"><label>Senha</label><input type="password" id="colabSenha" class="form-control" placeholder="mínimo 6 caracteres" minlength="6" required></div>
-            <div id="colabMsgError" class="error-msg"></div>
-            <button type="submit" class="btn btn-primary" id="addColabBtn" style="width:100%;margin-top:.5rem">Cadastrar colaborador</button>
-          </form>
-        </div>
-        <div>
-          <h3 style="font-size:.9rem;margin-bottom:1rem;color:var(--text-muted)">COLABORADORES ATIVOS</h3>
-          <div id="colabList"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="stats-grid" id="adminStats"></div>
-    <div class="admin-layout">
-      <div class="admin-sidebar">
-        <h3>Colaboradores</h3>
-        <div id="adminColabSidebar"><p style="color:var(--text-muted);font-size:.8rem">Carregando...</p></div>
-      </div>
-      <div>
-        <div id="adminDetailPanel" class="panel">
-          <p style="color:var(--text-muted);padding:.5rem">Selecione um colaborador ao lado para ver as obras.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- COLABORADOR VIEW -->
-<div id="appView" style="display:none">
-  <div class="container">
-    <header class="header">
-      <div class="brand"><div class="logo">CA</div><div class="brand-text"><h1>Cronograma PRO</h1><p>Minhas Obras</p></div></div>
-      <div style="display:flex;gap:.5rem">
-        <button class="btn btn-sec" id="toggleTheme">Tema</button>
-        <button class="btn btn-sec" id="logoutBtnUser" style="color:var(--danger)">Sair</button>
-      </div>
-    </header>
-    <div class="dashboard">
-      <aside>
-        <div class="nav">
-          <div class="nav-item active"><span>Dashboard</span><span class="badge" id="countAll" style="font-size:.65rem">R$ 0</span></div>
-          <div class="nav-item"><span>Acumulado</span><span class="badge" id="countDone" style="color:var(--success);font-size:.65rem">R$ 0</span></div>
-          <div class="nav-item"><span>Progresso</span><span class="badge" id="countPct">0%</span></div>
-          <div class="panel mt-4" style="padding:1rem">
-            <h3 style="font-size:.875rem;margin-bottom:1rem;color:var(--text-muted)">AÇÕES DE ARQUIVO</h3>
-            <div style="display:flex;flex-direction:column;gap:.5rem">
-              <button class="btn btn-sec" id="loadFile" style="width:100%">Importar arquivo</button>
-              <button class="btn btn-primary" id="saveJson" style="width:100%">Exportar JSON</button>
-            </div>
-          </div>
-          <div class="panel" style="padding:1rem;margin-top:0">
-            <h3 style="font-size:.875rem;margin-bottom:1rem;color:var(--text-muted)">OBRAS SALVAS</h3>
-            <div id="obrasBox" style="display:flex;flex-direction:column;gap:.75rem"></div>
-            <div style="margin-top:1rem"><button class="btn btn-primary" id="addObraBtn" style="width:100%">Adicionar nova obra</button></div>
-          </div>
-        </div>
-      </aside>
-      <main>
-        <div class="panel"><div class="flex-between mb-4"><h2>Configurações do Projeto</h2></div><div class="form-grid"><div class="form-group" style="grid-column:1/-1"><label>Nome do Projeto</label><input type="text" id="projName" class="form-control" placeholder="Nome do projeto"></div><div class="form-group"><label>Cliente / Setor</label><input type="text" id="projClient" class="form-control" placeholder="Ex.: Diretoria de Obras"></div><div class="form-group"><label>Escopo / Fase</label><input type="text" id="projScope" class="form-control" placeholder="Ex.: BM 10"></div></div></div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.5rem;margin-bottom:1.5rem">
-          <div class="panel" style="margin:0"><h2 class="mb-4">Nova Atividade</h2><div class="form-grid" style="grid-template-columns:1fr;margin-bottom:0"><div class="form-group" style="margin-bottom:.5rem"><label>Atividade</label><input type="text" id="fName" class="form-control" placeholder="Ex.: Alvenaria"></div></div><button class="btn btn-primary mt-4" id="addRow" style="width:100%">Adicionar Atividade</button></div>
-          <div class="panel" style="margin:0"><h2 class="mb-4">Curva S — Progresso Físico</h2><div class="chart-container"><canvas id="sCurveChart"></canvas></div></div>
-        </div>
-        <div class="stats-grid" id="stats"></div>
-        <div class="panel"><div class="flex-between"><h2>Índice / Itens Principais</h2><div><button class="btn btn-sec" id="fillSample" style="margin-right:.5rem">Limpar</button><button class="btn btn-sec" id="exportCsv">Exportar CSV</button></div></div><div class="table-container"><table><thead><tr><th>Item</th><th>Descrição</th><th style="text-align:right">Valor Contrato</th><th style="text-align:right">Medição</th><th style="text-align:right">Acumulado</th><th style="text-align:right">Saldo</th><th style="text-align:right">% Executada</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div></div>
-      </main>
-    </div>
-  </div>
-</div>
-
-</body>
-</html>
+    function renderTab
