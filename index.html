@@ -598,102 +598,167 @@
       return { valorContratoAditivo, acumuladoTotal };
     }
 
-    // ══════════════════════════════════════════════════════════════
-    // CORREÇÃO: fallback agora SEMPRE reavalia candidatos relativos a vcRef,
-    // mesmo que uma coluna já esteja definida — para garantir que usamos
-    // o grupo de colunas de VALOR (após vc) e não o de QUANTIDADE (antes de vc).
-    // ══════════════════════════════════════════════════════════════
-    function fallbackColsFromSubHeaders(data, dataStart, colsAtual){
-      const cols = Object.assign({}, colsAtual);
-      const RE_MED_FB   = /no.{0,10}period|periodo/;
-      const RE_ACUM_FB  = /acumulado/;
-      const RE_SALDO_FB = /^saldo$/;
-      const scanEnd = dataStart < 0 ? data.length : dataStart + 1;
-      const headerRows = data.slice(0, scanEnd);
-      const medCandidates   = [];
-      const acumCandidates  = [];
-      const saldoCandidates = [];
-      for(let r = 0; r < headerRows.length; r++){
-        const row = headerRows[r] || [];
+    // ══════════════════════════════════════════════════════════════════════
+    // DETECÇÃO DE COLUNAS: estratégia em 2 passos
+    //
+    // Passo 1 — Encontra a coluna "Valor Contrato" (vc) varrendo todos os
+    //           cabeçalhos. Só registra med/acum/saldo que apareçam NA MESMA
+    //           LINHA e APÓS vc — ignora ocorrências antes de vc (quantidades).
+    //
+    // Passo 2 — Se ainda faltarem med/acum/saldo, faz uma segunda varredura
+    //           exclusivamente após vcRef, usando regex flexível.
+    // ══════════════════════════════════════════════════════════════════════
+    async function readExcelFile(file){
+      if(!file) throw new Error('Nenhum arquivo fornecido.');
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buffer),{type:'array',cellDates:false});
+      const target = wb.SheetNames
+        .filter(n=>/^(BM|MED)\s*\d+/i.test(n))
+        .sort((a,b)=>parseInt(a.match(/\d+/)?.[0]||0)-parseInt(b.match(/\d+/)?.[0]||0))
+        .at(-1) || wb.SheetNames.at(-1);
+      if(!target) throw new Error('Nenhuma aba encontrada.');
+
+      const ws   = wb.Sheets[target];
+      const data = XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+
+      const RE = {
+        desc:  /discrimina|descri|servico/,
+        vc:    /valor.{0,25}contrato|total.{0,25}contrato/,
+        med:   /no.{0,10}period|no.{0,10}mes|^medicao$|^realizado$|periodo/,
+        acum:  /acumulado/,
+        saldo: /^saldo$/
+      };
+
+      let cols = {desc:-1, vc:-1, med:-1, acum:-1, saldo:-1};
+      let dataStart = -1;
+
+      // ── Passo 1: localiza dataStart e vc; med/acum/saldo só se vierem APÓS vc
+      for(let r = 0; r < data.length; r++){
+        const row = data[r] || [];
+        // linha de dados começa quando col-0 é número inteiro
+        if(/^\d+$/.test(String(row[0]??'').trim())){ dataStart = r; break; }
+
+        // primeiro passa por toda a linha para achar vc
+        let vcThisRow = -1;
         for(let c = 0; c < row.length; c++){
           const t = norm(row[c]);
           if(!t) continue;
-          if(RE_MED_FB.test(t))   medCandidates.push(c);
-          if(RE_ACUM_FB.test(t))  acumCandidates.push(c);
-          if(RE_SALDO_FB.test(t)) saldoCandidates.push(c);
+          if(RE.desc.test(t) && cols.desc < 0) cols.desc = c;
+          if(RE.vc.test(t))  vcThisRow = c;
+        }
+        // registra vc se encontrado
+        if(vcThisRow >= 0 && cols.vc < 0) cols.vc = vcThisRow;
+
+        // agora varre apenas colunas APÓS vc para registrar med/acum/saldo
+        const vcRef = cols.vc >= 0 ? cols.vc : vcThisRow;
+        if(vcRef >= 0){
+          for(let c = vcRef + 1; c < row.length; c++){
+            const t = norm(row[c]);
+            if(!t) continue;
+            if(RE.med.test(t)   && cols.med   < 0) cols.med   = c;
+            if(RE.acum.test(t)  && cols.acum  < 0) cols.acum  = c;
+            if(RE.saldo.test(t) && cols.saldo < 0) cols.saldo = c;
+          }
         }
       }
+
+      // ── Passo 2: varredura de reforço — percorre TODOS os cabeçalhos mas
+      //    só aceita colunas > vcRef, sobrescrevendo apenas se ainda -1
       const vcRef = cols.vc >= 0 ? cols.vc : 0;
-
-      // Sempre escolhe o melhor candidato que vem DEPOIS de vcRef (colunas de valor R$)
-      // Isso corrige planilhas que têm dois grupos de sub-cabeçalhos:
-      //   grupo 1 (quantidades): "No período", "Acumulado", "Saldo" — antes de vc
-      //   grupo 2 (valores R$):  "No período", "Acumulado", "Saldo" — depois de vc ← correto
-      function bestCandidateAfterVc(candidates){
-        if(!candidates.length) return -1;
-        const afterVc = candidates.filter(c => c > vcRef);
-        if(afterVc.length) return afterVc[0];
-        return candidates[candidates.length - 1];
+      const scanEnd = dataStart >= 0 ? dataStart : data.length;
+      for(let r = 0; r < scanEnd; r++){
+        const row = data[r] || [];
+        for(let c = vcRef + 1; c < row.length; c++){
+          const t = norm(row[c]);
+          if(!t) continue;
+          if(RE.med.test(t)   && cols.med   < 0) cols.med   = c;
+          if(RE.acum.test(t)  && cols.acum  < 0) cols.acum  = c;
+          if(RE.saldo.test(t) && cols.saldo < 0) cols.saldo = c;
+        }
       }
 
-      const betterMed   = bestCandidateAfterVc(medCandidates);
-      const betterAcum  = bestCandidateAfterVc(acumCandidates);
-      const betterSaldo = bestCandidateAfterVc(saldoCandidates);
-
-      // Sobrescreve se o candidato melhor (após vc) for diferente do atual
-      if(betterMed   >= 0) cols.med   = betterMed;
-      if(betterAcum  >= 0) cols.acum  = betterAcum;
-      if(betterSaldo >= 0) cols.saldo = betterSaldo;
-
-      return cols;
-    }
-
-    async function readExcelFile(file){
-      if(!file)throw new Error('Nenhum arquivo fornecido.');
-      const buffer=await file.arrayBuffer();
-      const wb=XLSX.read(new Uint8Array(buffer),{type:'array',cellDates:false});
-      const target=wb.SheetNames.filter(n=>/^(BM|MED)\s*\d+/i.test(n)).sort((a,b)=>parseInt(a.match(/\d+/)?.[0]||0)-parseInt(b.match(/\d+/)?.[0]||0)).at(-1)||wb.SheetNames.at(-1);
-      if(!target)throw new Error('Nenhuma aba encontrada.');
-      const ws=wb.Sheets[target];
-      const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
-      const RE={desc:/discrimina|descri|servico/,vc:/valor.{0,25}contrato|total.{0,25}contrato/,med:/no.{0,10}period|no.{0,10}mes|^medicao$|^realizado$|periodo/,acum:/acumulado/,saldo:/^saldo$/};
-      let cols={desc:-1,vc:-1,med:-1,acum:-1,saldo:-1},dataStart=-1;
-      for(let r=0;r<data.length;r++){
-        const row=data[r]||[];
-        if(/^\d+$/.test(String(row[0]??'').trim())){dataStart=r;break;}
-        for(let c=0;c<row.length;c++){const t=norm(row[c]);if(!t)continue;if(RE.desc.test(t))cols.desc=c;if(RE.vc.test(t))cols.vc=c;if(RE.med.test(t))cols.med=c;if(RE.acum.test(t))cols.acum=c;if(RE.saldo.test(t))cols.saldo=c;}
+      // ── Fallback numérico: se vc foi encontrado mas med/acum/saldo não,
+      //    usa as 3 colunas numéricas imediatamente após vc na primeira linha de dados
+      if(cols.vc >= 0 && dataStart >= 0 && (cols.med < 0 || cols.acum < 0 || cols.saldo < 0)){
+        const fr = data[dataStart] || [];
+        let idx = 0;
+        for(let c = cols.vc + 1; c < fr.length; c++){
+          if(!isNum(fr[c])) continue;
+          if(idx === 0 && cols.med   < 0){ cols.med   = c; idx++; }
+          else if(idx === 1 && cols.acum  < 0){ cols.acum  = c; idx++; }
+          else if(idx === 2 && cols.saldo < 0){ cols.saldo = c; break; }
+          else idx++;
+        }
       }
-      // ══ CORREÇÃO: sempre passa pelo fallback para garantir que med/acum/saldo
-      // apontem para as colunas de VALOR (após vc), não de QUANTIDADE (antes de vc).
-      cols = fallbackColsFromSubHeaders(data, dataStart, cols);
 
-      if(cols.vc<0&&dataStart>=0){const fr=data[dataStart]||[];const nc=[];for(let c=1;c<fr.length;c++)if(isNum(fr[c]))nc.push(c);const vi=nc.findIndex(c=>Number(fr[c])>0);if(vi>=0){cols.vc=nc[vi];if(cols.med<0)cols.med=nc[vi+1]??cols.vc+1;if(cols.acum<0)cols.acum=nc[vi+2]??cols.vc+2;if(cols.saldo<0)cols.saldo=nc[vi+3]??cols.vc+3;}else{cols.vc=12;cols.med=13;cols.acum=14;cols.saldo=15;}}
-      const items=[];
-      for(let r=0;r<data.length;r++){
-        const row=data[r]||[];const itemStr=String(row[0]??'').trim();if(!/^\d+$/.test(itemStr))continue;
-        let descricao='';if(cols.desc>=0)descricao=String(row[cols.desc]??'').trim();
-        if(!descricao){const lim=cols.vc>0?cols.vc:10;for(let c=1;c<lim;c++){const v=String(row[c]??'').trim();if(v&&!isNum(row[c])){descricao=v;break;}}}
-        const vc=Number(row[cols.vc])||0,med=Number(row[cols.med])||0,acum=Number(row[cols.acum])||0;
-        let saldo=cols.saldo>=0?Number(row[cols.saldo]):0;if(!saldo&&vc>0)saldo=vc-acum;
-        const pct=vc>0?+(acum/vc*100).toFixed(2):0;
-        items.push({item:itemStr,descricao,valorContrato:+vc.toFixed(2),medicao:+med.toFixed(2),acumulado:+acum.toFixed(2),saldo:+saldo.toFixed(2),percentualExecutado:pct});
+      // ── Fallback absoluto: se vc nunca encontrado, tenta inferir por posição numérica
+      if(cols.vc < 0 && dataStart >= 0){
+        const fr = data[dataStart] || [];
+        const nc = [];
+        for(let c = 1; c < fr.length; c++) if(isNum(fr[c])) nc.push(c);
+        const vi = nc.findIndex(c => Number(fr[c]) > 0);
+        if(vi >= 0){
+          cols.vc    = nc[vi];
+          if(cols.med   < 0) cols.med   = nc[vi+1] ?? cols.vc+1;
+          if(cols.acum  < 0) cols.acum  = nc[vi+2] ?? cols.vc+2;
+          if(cols.saldo < 0) cols.saldo = nc[vi+3] ?? cols.vc+3;
+        } else {
+          cols.vc=12; cols.med=13; cols.acum=14; cols.saldo=15;
+        }
       }
-      const st = items.reduce((a,i)=>a+i.valorContrato,0);
-      const sa = items.reduce((a,i)=>a+i.acumulado,0);
-      const hv = extractHeaderValues(data, dataStart);
+
+      // ── Leitura das linhas de dados
+      const items = [];
+      for(let r = 0; r < data.length; r++){
+        const row = data[r] || [];
+        const itemStr = String(row[0]??'').trim();
+        if(!/^\d+$/.test(itemStr)) continue;
+
+        let descricao = '';
+        if(cols.desc >= 0) descricao = String(row[cols.desc]??'').trim();
+        if(!descricao){
+          const lim = cols.vc > 0 ? cols.vc : 10;
+          for(let c = 1; c < lim; c++){
+            const v = String(row[c]??'').trim();
+            if(v && !isNum(row[c])){ descricao = v; break; }
+          }
+        }
+
+        const vc   = Number(row[cols.vc])   || 0;
+        const med  = Number(row[cols.med])  || 0;
+        const acum = Number(row[cols.acum]) || 0;
+        let saldo  = cols.saldo >= 0 ? Number(row[cols.saldo]) : 0;
+        if(!saldo && vc > 0) saldo = vc - acum;
+        const pct  = vc > 0 ? +(acum / vc * 100).toFixed(2) : 0;
+
+        items.push({
+          item: itemStr,
+          descricao,
+          valorContrato: +vc.toFixed(2),
+          medicao:       +med.toFixed(2),
+          acumulado:     +acum.toFixed(2),
+          saldo:         +saldo.toFixed(2),
+          percentualExecutado: pct
+        });
+      }
+
+      const st  = items.reduce((a,i)=>a+i.valorContrato, 0);
+      const sa  = items.reduce((a,i)=>a+i.acumulado,     0);
+      const hv  = extractHeaderValues(data, dataStart);
       const vca = hv.valorContratoAditivo || st;
-      const acu = hv.acumuladoTotal || sa;
-      return{
-        nome:fileBaseName(file.name),
-        nomeProjeto:wb.Props?.Title||fileBaseName(file.name)||'Nova obra',
-        medicaoAtual:target,
-        itens:items,
-        resumo:{
-          total: st,
-          acumulado: sa,
-          percentual: vca > 0 ? +(acu/vca*100).toFixed(2) : 0,
+      const acu = hv.acumuladoTotal       || sa;
+
+      return {
+        nome:        fileBaseName(file.name),
+        nomeProjeto: wb.Props?.Title || fileBaseName(file.name) || 'Nova obra',
+        medicaoAtual: target,
+        itens: items,
+        resumo: {
+          total:                st,
+          acumulado:            sa,
+          percentual:           vca > 0 ? +(acu/vca*100).toFixed(2) : 0,
           valorContratoAditivo: vca,
-          acumuladoTotal: acu
+          acumuladoTotal:       acu
         }
       };
     }
@@ -730,450 +795,4 @@
     }
 
     async function findDisabledDocByEmail(email){
-      const q = query(collection(db,'users'), where('email','==',email), where('disabled','==',true));
-      const snap = await getDocs(q);
-      if(snap.empty) return null;
-      const d = snap.docs[0];
-      return { uid: d.id, ...d.data() };
-    }
-
-    // ══ INICIALIZAÇÃO — aguarda DOM estar pronto ════════════════════
-    document.addEventListener('DOMContentLoaded', () => {
-
-      onAuthStateChanged(auth, async user => {
-        currentUser = user;
-        if(!user){ showView('loginView'); return; }
-        const snap = await getDoc(doc(db,'users',user.uid));
-        const data = snap.exists() ? snap.data() : {};
-        isAdmin = data.role === 'admin';
-        if(isAdmin){ initAdminView(); }
-        else        { initUserView(); }
-      });
-
-      const loginForm = $('loginForm');
-      if(loginForm) loginForm.addEventListener('submit', async e => {
-        e.preventDefault();
-        const email = $('loginEmail').value.trim();
-        const senha = $('loginSenha').value;
-        const btn = $('loginBtn'); btn.disabled=true; btn.textContent='Entrando...';
-        $('loginError').style.display='none';
-        try{
-          await signInWithEmailAndPassword(auth, email, senha);
-        } catch(err){
-          $('loginError').textContent = 'E-mail ou senha inválidos.';
-          $('loginError').style.display='block';
-        } finally{ btn.disabled=false; btn.textContent='Entrar'; }
-      });
-
-      const logoutAdmin = $('logoutBtnAdmin');
-      if(logoutAdmin) logoutAdmin.addEventListener('click', () => { cleanupListeners(); signOut(auth); });
-
-      const logoutUser = $('logoutBtnUser');
-      if(logoutUser) logoutUser.addEventListener('click', () => { cleanupListeners(); signOut(auth); });
-
-      const tbody = $('tbody');
-      if(tbody){
-        tbody.addEventListener('input',e=>{const t=e.target,tr=t.closest('tr');if(!tr)return;const i=+tr.dataset.i,k=t.dataset.k;if(k){if(['valorContrato','medicao','acumulado','saldo','percentualExecutado'].includes(k))rows[i][k]=Number(t.textContent.replace(',','.').replace(/[^\d.-]/g,''))||0;else rows[i][k]=t.textContent.trim();updateDashboard();scheduleSave();}});
-        tbody.addEventListener('focusout',e=>{const t=e.target,tr=t.closest('tr');if(!tr)return;const i=+tr.dataset.i,k=t.dataset.k;if(k&&['valorContrato','medicao','acumulado','saldo'].includes(k))t.textContent=fmtMoney(rows[i][k]);else if(k==='percentualExecutado')t.textContent=Number(rows[i][k]).toFixed(2);});
-        tbody.addEventListener('click',e=>{const b=e.target.closest('button[data-del]');if(!b)return;rows.splice(+b.dataset.del,1);const o=currentObra();if(o){o.itens=rows;saveObraFirestore(o);}renderAll();});
-      }
-
-      const addRow = $('addRow');
-      if(addRow) addRow.onclick=()=>{
-        const vc  = parseMoney($('fValorContrato').value);
-        const med = parseMoney($('fMedicao').value);
-        const acu = parseMoney($('fAcumulado').value);
-        const pctInput = parseFloat($('fPct').value) || (vc > 0 ? +(acu/vc*100).toFixed(2) : 0);
-        const saldo = parseMoney($('fSaldo').value) || (vc > 0 ? vc - acu : 0);
-        rows.push({
-          item: $('fItem').value.trim() || String(rows.length + 1),
-          descricao: $('fName').value.trim() || 'Nova atividade',
-          valorContrato: vc, medicao: med, acumulado: acu,
-          saldo: saldo, percentualExecutado: pctInput
-        });
-        ['fItem','fName','fValorContrato','fMedicao','fAcumulado','fSaldo','fPct'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
-        const o=currentObra();if(o){o.itens=rows;saveObraFirestore(o);}renderAll();
-      };
-
-      const fillSample = $('fillSample');
-      if(fillSample) fillSample.onclick=()=>{rows=[];const o=currentObra();if(o){o.itens=[];saveObraFirestore(o);}renderAll();};
-
-      const loadFile = $('loadFile');
-      if(loadFile) loadFile.onclick=()=>loadFromJsonOrExcel(false);
-
-      const addObraBtn = $('addObraBtn');
-      if(addObraBtn) addObraBtn.onclick=()=>loadFromJsonOrExcel(false);
-
-      const toggleTheme = $('toggleTheme');
-      if(toggleTheme) toggleTheme.onclick=()=>{
-        document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';
-        if(rows.length) chartInstance = renderCurvaS('sCurveChart','sCurveScrollWrap',rows,chartInstance);
-      };
-
-      const exportCsv = $('exportCsv');
-      if(exportCsv) exportCsv.onclick=()=>{
-        const fields=['item','descricao','valorContrato','medicao','acumulado','saldo','percentualExecutado'];
-        const body=rows.map(r=>fields.map(k=>`"${String(r[k]??'').replace(/"/g,'""')}`).join(',')).join('\n');
-        const blob=new Blob([fields.join(',')+'\n'+body],{type:'text/csv;charset=utf-8'});
-        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cronograma.csv';a.click();URL.revokeObjectURL(a.href);
-      };
-
-      const saveJson = $('saveJson');
-      if(saveJson) saveJson.onclick=()=>{
-        const o=currentObra();const name=($('projName').value.trim()||'projeto');
-        const payload={obra:name,medicaoAtual:o?.medicaoAtual||'',resumo:o?.resumo||{},itens:rows};
-        const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
-        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name+'.json';a.click();URL.revokeObjectURL(a.href);
-      };
-
-      const projName = $('projName');
-      if(projName) projName.addEventListener('change', async () => {
-        const o = currentObra(); if(!o) return;
-        o.nomeProjeto = $('projName').value.trim(); o.nome = o.nomeProjeto;
-        await saveObraFirestore(o); renderObrasBox();
-      });
-
-      const projClient = $('projClient');
-      if(projClient) projClient.addEventListener('change', async () => {
-        const o = currentObra(); if(!o) return;
-        o.cliente = $('projClient').value.trim();
-        await saveObraFirestore(o);
-      });
-
-      const projScope = $('projScope');
-      if(projScope) projScope.addEventListener('change', async () => {
-        const o = currentObra(); if(!o) return;
-        o.medicaoAtual = $('projScope').value.trim();
-        await saveObraFirestore(o);
-      });
-
-      setupNovaAtividade();
-    });
-
-  </script>
-  <style>
-    :root{
-      --bg:#f8fafc;--surface:#ffffff;--surface2:#f1f5f9;--border:#e2e8f0;
-      --text:#0f172a;--text-muted:#64748b;--text-faint:#94a3b8;
-      --primary:#6366f1;--primary-h:#4f46e5;--success:#16a34a;
-      --danger:#ef4444;--warning:#f59e0b;--radius:12px;
-      --shadow:0 1px 3px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.06);
-    }
-    [data-theme="dark"]{
-      --bg:#0f172a;--surface:#1e293b;--surface2:#334155;--border:#334155;
-      --text:#f1f5f9;--text-muted:#94a3b8;--text-faint:#64748b;
-      --shadow:0 1px 3px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.2);
-    }
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Satoshi',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;min-height:100dvh}
-    button{cursor:pointer;border:none;font-family:inherit}
-    input,select,textarea{font-family:inherit;font-size:inherit}
-
-    /* ── Login ── */
-    #loginView{display:flex;align-items:center;justify-content:center;min-height:100dvh;padding:1rem}
-    .login-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:2.5rem 2rem;width:100%;max-width:380px;box-shadow:var(--shadow)}
-    .login-logo{display:flex;align-items:center;gap:.6rem;margin-bottom:2rem}
-    .login-logo svg{flex-shrink:0}
-    .login-logo-text{font-size:1.2rem;font-weight:800;letter-spacing:-.02em}
-    .login-title{font-size:1.3rem;font-weight:700;margin-bottom:.25rem}
-    .login-sub{color:var(--text-muted);font-size:.85rem;margin-bottom:1.75rem}
-    .error-msg{background:rgba(239,68,68,.1);color:var(--danger);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:.6rem .9rem;font-size:.82rem;margin-bottom:1rem;display:none}
-
-    /* ── Forms ── */
-    .form-group{margin-bottom:1rem}
-    .form-group label{display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.35rem;text-transform:uppercase;letter-spacing:.04em}
-    .form-control{width:100%;padding:.55rem .8rem;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);outline:none;transition:border-color .15s}
-    .form-control:focus{border-color:var(--primary)}
-
-    /* ── Buttons ── */
-    .btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;padding:.55rem 1.1rem;border-radius:8px;font-size:.82rem;font-weight:600;transition:opacity .15s,background .15s,transform .1s;white-space:nowrap}
-    .btn:active{transform:scale(.97)}
-    .btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:var(--primary-h)}
-    .btn-sec{background:var(--surface2);color:var(--text);border:1px solid var(--border)}.btn-sec:hover{opacity:.8}
-    .btn-danger{background:rgba(239,68,68,.1);color:var(--danger);border:1px solid rgba(239,68,68,.2)}.btn-danger:hover{background:rgba(239,68,68,.18)}
-    .btn-warning{background:rgba(245,158,11,.1);color:var(--warning);border:1px solid rgba(245,158,11,.2)}.btn-warning:hover{background:rgba(245,158,11,.18)}
-    .btn-success{background:rgba(22,163,74,.1);color:var(--success);border:1px solid rgba(22,163,74,.2)}.btn-success:hover{background:rgba(22,163,74,.18)}
-    .btn-full{width:100%}
-
-    /* ── Layout ── */
-    #appView,#adminView{display:none}
-    .app-shell{display:grid;grid-template-rows:auto 1fr;min-height:100dvh}
-    .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:.6rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;position:sticky;top:0;z-index:100}
-    .topbar-logo{display:flex;align-items:center;gap:.5rem;font-weight:800;font-size:1rem;letter-spacing:-.02em}
-    .topbar-actions{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
-    .main-content{padding:1.25rem;max-width:1400px;margin:0 auto;width:100%}
-
-    /* ── Panel ── */
-    .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem;box-shadow:var(--shadow)}
-    .panel-title{font-size:.95rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
-
-    /* ── Stats ── */
-    .stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.75rem;margin-bottom:1.25rem}
-    .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.9rem 1rem;display:flex;flex-direction:column;gap:.3rem}
-    .stat-card.compact{padding:.65rem .85rem}
-    .stat-label{font-size:.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em}
-    .stat-value{font-size:1.3rem;font-weight:800;letter-spacing:-.02em}
-
-    /* ── Table ── */
-    .table-container{overflow-x:auto;border-radius:8px;border:1px solid var(--border)}
-    table{width:100%;border-collapse:collapse;font-size:.8rem}
-    th,td{padding:.55rem .75rem;border-bottom:1px solid var(--border);white-space:nowrap}
-    th{background:var(--surface2);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
-    .th-sticky{position:sticky;top:0;z-index:1}
-    tr:last-child td{border-bottom:none}
-    tr:hover td{background:var(--surface2)}
-    td[contenteditable]{cursor:text;outline:none}
-    td[contenteditable]:focus{background:rgba(99,102,241,.08);box-shadow:inset 0 0 0 1px var(--primary)}
-    .td-desc{max-width:220px;overflow:hidden;text-overflow:ellipsis}
-
-    /* ── Chart ── */
-    .chart-scroll-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-    .chart-container{position:relative;height:220px;min-width:0}
-
-    /* ── Summary bar ── */
-    .summary-bar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;padding:.75rem 1rem;background:var(--surface2);border-radius:8px;margin-bottom:1.25rem;font-size:.82rem}
-    .summary-bar strong{font-weight:700}
-
-    /* ── Add row form ── */
-    .add-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.6rem;align-items:end}
-    .add-form .form-group{margin:0}
-
-    /* ── Obra cards ── */
-    .obra-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:.75rem}
-    .obra-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.5rem}
-    .obra-card-title{font-weight:700;font-size:.9rem}
-    .obra-card-sub{font-size:.75rem;color:var(--text-muted);margin-top:.1rem}
-    .obra-card-pct{font-weight:800;font-size:1.1rem;color:var(--primary);white-space:nowrap}
-    .obra-progress-bar{height:5px;background:var(--surface2);border-radius:999px;overflow:hidden;margin-bottom:.6rem}
-    .obra-progress-fill{height:100%;background:var(--primary);border-radius:999px;transition:width .4s}
-    .obra-card-footer{display:flex;gap:1rem;flex-wrap:wrap;font-size:.75rem;color:var(--text-muted)}
-
-    /* ── Admin layout ── */
-    .admin-layout{display:grid;grid-template-columns:220px 1fr;gap:1.25rem;align-items:start}
-    @media(max-width:768px){.admin-layout{grid-template-columns:1fr}}
-    .admin-sidebar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;position:sticky;top:70px}
-    .admin-sidebar-title{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:.75rem}
-    .admin-stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.6rem;margin-bottom:1.25rem}
-    .colab-sidebar-item{padding:.6rem .75rem;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:background .12s}
-    .colab-sidebar-item:hover{background:var(--surface2)}
-    .colab-sidebar-item.active{background:rgba(99,102,241,.1);border-color:rgba(99,102,241,.25)}
-
-    /* ── Colab management ── */
-    .colab-item{display:flex;justify-content:space-between;align-items:center;gap:.75rem;padding:.65rem 0;border-bottom:1px solid var(--border)}
-    .colab-item:last-child{border-bottom:none}
-
-    @media(max-width:640px){
-      .topbar{padding:.5rem .75rem}
-      .main-content{padding:.75rem}
-      .stats-grid{grid-template-columns:repeat(2,1fr)}
-      .add-form{grid-template-columns:1fr 1fr}
-      .panel{padding:.9rem}
-    }
-  </style>
-</head>
-<body>
-
-<!-- ══ LOGIN ══════════════════════════════════════════════════════ -->
-<div id="loginView">
-  <div class="login-card">
-    <div class="login-logo">
-      <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-label="Cronograma PRO">
-        <rect width="32" height="32" rx="8" fill="#6366f1"/>
-        <rect x="7" y="9" width="18" height="2.5" rx="1.25" fill="white"/>
-        <rect x="7" y="14.75" width="12" height="2.5" rx="1.25" fill="white" opacity=".7"/>
-        <rect x="7" y="20.5" width="15" height="2.5" rx="1.25" fill="white" opacity=".4"/>
-        <circle cx="24" cy="22" r="5" fill="#22d3ee"/>
-        <path d="M21.5 22l2 2 3-3" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span class="login-logo-text">Cronograma PRO</span>
-    </div>
-    <div class="login-title">Bem-vindo</div>
-    <div class="login-sub">Entre com suas credenciais para continuar</div>
-    <div id="loginError" class="error-msg"></div>
-    <form id="loginForm">
-      <div class="form-group">
-        <label>E-mail</label>
-        <input id="loginEmail" type="email" class="form-control" placeholder="seu@email.com" required autocomplete="email"/>
-      </div>
-      <div class="form-group">
-        <label>Senha</label>
-        <input id="loginSenha" type="password" class="form-control" placeholder="••••••••" required autocomplete="current-password"/>
-      </div>
-      <button id="loginBtn" type="submit" class="btn btn-primary btn-full" style="margin-top:.5rem">Entrar</button>
-    </form>
-  </div>
-</div>
-
-<!-- ══ APP (COLABORADOR) ══════════════════════════════════════════ -->
-<div id="appView">
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="topbar-logo">
-        <svg width="26" height="26" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <rect width="32" height="32" rx="8" fill="#6366f1"/>
-          <rect x="7" y="9" width="18" height="2.5" rx="1.25" fill="white"/>
-          <rect x="7" y="14.75" width="12" height="2.5" rx="1.25" fill="white" opacity=".7"/>
-          <rect x="7" y="20.5" width="15" height="2.5" rx="1.25" fill="white" opacity=".4"/>
-          <circle cx="24" cy="22" r="5" fill="#22d3ee"/>
-          <path d="M21.5 22l2 2 3-3" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        Cronograma PRO
-      </div>
-      <div class="topbar-actions">
-        <button id="toggleTheme" class="btn btn-sec" aria-label="Alternar tema">🌙</button>
-        <button id="exportCsv"  class="btn btn-sec">CSV</button>
-        <button id="saveJson"   class="btn btn-sec">JSON</button>
-        <button id="logoutBtnUser" class="btn btn-danger">Sair</button>
-      </div>
-    </header>
-    <main class="main-content">
-
-      <!-- Obra selector -->
-      <div class="panel" style="margin-bottom:1rem">
-        <div class="panel-title">📁 Obras</div>
-        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
-          <div id="obrasBox" style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;flex:1"></div>
-          <button id="addObraBtn" class="btn btn-primary">+ Nova Obra</button>
-        </div>
-      </div>
-
-      <!-- Project info -->
-      <div class="panel" style="margin-bottom:1rem">
-        <div class="add-form">
-          <div class="form-group"><label>Nome da Obra</label><input id="projName" class="form-control" placeholder="Nome do projeto"/></div>
-          <div class="form-group"><label>Cliente</label><input id="projClient" class="form-control" placeholder="Cliente"/></div>
-          <div class="form-group"><label>Medição / Aba</label><input id="projScope" class="form-control" placeholder="ex: BM 03"/></div>
-        </div>
-      </div>
-
-      <!-- Stats -->
-      <div class="stats-grid" id="stats"></div>
-
-      <!-- Summary bar -->
-      <div class="summary-bar">
-        <span>CT/Aditivo: <strong id="countAll">—</strong></span>
-        <span style="color:var(--text-muted)">|</span>
-        <span>Acumulado: <strong id="countDone" style="color:var(--success)">—</strong></span>
-        <span style="color:var(--text-muted)">|</span>
-        <span>%: <strong id="countPct">—</strong></span>
-      </div>
-
-      <!-- Chart -->
-      <div class="panel">
-        <div class="panel-title">📈 Curva S — Progresso Físico</div>
-        <div class="chart-scroll-wrap" id="sCurveScrollWrap">
-          <div class="chart-container"><canvas id="sCurveChart"></canvas></div>
-        </div>
-      </div>
-
-      <!-- Table -->
-      <div class="panel">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem">
-          <div class="panel-title" style="margin:0">📋 Índice de Itens</div>
-          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-            <button id="loadFile"   class="btn btn-sec">📂 Importar XLSX</button>
-            <button id="fillSample" class="btn btn-sec">🗑️ Limpar</button>
-          </div>
-        </div>
-        <div class="table-container">
-          <table>
-            <thead><tr>
-              <th class="th-sticky">Item</th>
-              <th class="th-sticky">Descrição</th>
-              <th class="th-sticky" style="text-align:right">Valor Contrato</th>
-              <th class="th-sticky" style="text-align:right">Medição</th>
-              <th class="th-sticky" style="text-align:right">Acumulado</th>
-              <th class="th-sticky" style="text-align:right">Saldo</th>
-              <th class="th-sticky" style="text-align:right">% Exec.</th>
-              <th class="th-sticky"></th>
-            </tr></thead>
-            <tbody id="tbody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Add row -->
-      <div class="panel">
-        <div class="panel-title">➕ Nova Atividade</div>
-        <div class="add-form">
-          <div class="form-group"><label>Item</label><input id="fItem" class="form-control" placeholder="ex: 1.1"/></div>
-          <div class="form-group" style="grid-column:span 2"><label>Descrição</label><input id="fName" class="form-control" placeholder="Descrição do serviço"/></div>
-          <div class="form-group"><label>Valor Contrato</label><input id="fValorContrato" class="form-control" placeholder="0,00"/></div>
-          <div class="form-group"><label>Medição</label><input id="fMedicao" class="form-control" placeholder="0,00"/></div>
-          <div class="form-group"><label>Acumulado</label><input id="fAcumulado" class="form-control" placeholder="0,00"/></div>
-          <div class="form-group"><label>Saldo</label><input id="fSaldo" class="form-control" placeholder="auto"/></div>
-          <div class="form-group"><label>% Exec.</label><input id="fPct" class="form-control" placeholder="auto"/></div>
-          <div class="form-group" style="display:flex;align-items:flex-end">
-            <button id="addRow" class="btn btn-primary btn-full">Adicionar</button>
-          </div>
-        </div>
-      </div>
-
-    </main>
-  </div>
-</div>
-
-<!-- ══ ADMIN ══════════════════════════════════════════════════════ -->
-<div id="adminView">
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="topbar-logo">
-        <svg width="26" height="26" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <rect width="32" height="32" rx="8" fill="#6366f1"/>
-          <rect x="7" y="9" width="18" height="2.5" rx="1.25" fill="white"/>
-          <rect x="7" y="14.75" width="12" height="2.5" rx="1.25" fill="white" opacity=".7"/>
-          <rect x="7" y="20.5" width="15" height="2.5" rx="1.25" fill="white" opacity=".4"/>
-          <circle cx="24" cy="22" r="5" fill="#22d3ee"/>
-          <path d="M21.5 22l2 2 3-3" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        Cronograma PRO <span style="font-size:.7rem;background:rgba(99,102,241,.15);color:var(--primary);padding:.15rem .5rem;border-radius:999px;margin-left:.35rem;font-weight:600">ADMIN</span>
-      </div>
-      <div class="topbar-actions">
-        <button id="adminToggleColab" class="btn btn-sec">👥 Colaboradores</button>
-        <button id="logoutBtnAdmin" class="btn btn-danger">Sair</button>
-      </div>
-    </header>
-    <main class="main-content">
-
-      <!-- Global stats -->
-      <div class="stats-grid" id="adminStats"></div>
-
-      <!-- Colab management panel (hidden by default) -->
-      <div id="adminColabPanel" style="display:none">
-        <div class="panel">
-          <div class="panel-title">👥 Gerenciar Colaboradores</div>
-          <div id="colabList" style="margin-bottom:1.5rem"></div>
-          <div style="border-top:1px solid var(--border);padding-top:1.25rem">
-            <div style="font-size:.82rem;font-weight:700;margin-bottom:1rem">Cadastrar novo colaborador</div>
-            <div id="colabMsgError" class="error-msg"></div>
-            <form id="addColabForm">
-              <div class="add-form">
-                <div class="form-group"><label>Nome</label><input id="colabNome" class="form-control" placeholder="Nome completo" required/></div>
-                <div class="form-group"><label>E-mail</label><input id="colabEmail" class="form-control" type="email" placeholder="email@exemplo.com" required/></div>
-                <div class="form-group"><label>Senha</label><input id="colabSenha" class="form-control" type="password" placeholder="mín. 6 caracteres" required minlength="6"/></div>
-                <div class="form-group" style="display:flex;align-items:flex-end">
-                  <button id="addColabBtn" type="submit" class="btn btn-primary btn-full">Cadastrar colaborador</button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      <!-- Obras detail -->
-      <div class="admin-layout">
-        <aside class="admin-sidebar">
-          <div class="admin-sidebar-title">Colaboradores</div>
-          <div id="adminColabSidebar"></div>
-        </aside>
-        <div id="adminDetailPanel">
-          <p style="color:var(--text-muted);padding:1rem">Selecione um colaborador ao lado para ver as obras.</p>
-        </div>
-      </div>
-
-    </main>
-  </div>
-</div>
-
-</body>
-</html>
+      const q = query(collection(db,'users'), where('email','==',email), where('disabled','==',tr
