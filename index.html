@@ -636,6 +636,9 @@
       return { valorContratoAditivo, acumuladoTotal };
     }
 
+    // ══════════════════════════════════════════════════════════════
+    // LEITURA XLSX — busca inteligente por nome de coluna + ancoragem por item inteiro
+    // ══════════════════════════════════════════════════════════════
     async function readExcelFile(file){
       if(!file) throw new Error('Nenhum arquivo fornecido.');
       const buffer = await file.arrayBuffer();
@@ -652,55 +655,71 @@
       const data = XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
 
       // PASSO 1: encontra a primeira linha onde col[0] é número inteiro (1, 2, 3...)
+      // Ancoragem por item — robusto a qualquer variação de layout
       let dataStart = -1;
       for(let r=0; r<data.length; r++){
-        const cell = String(data[r]?.[0]??'').trim();
-        if(/^\d+$/.test(cell)){ dataStart = r; break; }
-      }
-      if(dataStart < 0) throw new Error('Não foi possível localizar os itens na planilha.');
-
-      // PASSO 2: varre TODAS as linhas acima de dataStart procurando cabeçalhos
-      // em qualquer linha e qualquer coluna — independente de células mescladas
-      const RE = {
-        desc:  /discrimina|descri[çc]|servico/i,
-        vc:    /valor.{0,30}contrato|total.{0,30}contrato/i,
-        med:   /no.{0,15}per[ií]odo|no.{0,10}mes|^medicao$|^realizado$|per[ií]odo/i,
-        acum:  /acumulado/i,
-        saldo: /^saldo$/i
-      };
-      const cols = {desc:-1, vc:-1, med:-1, acum:-1, saldo:-1};
-
-      for(let r=0; r<dataStart; r++){
-        const row = data[r] || [];
-        for(let c=0; c<row.length; c++){
-          const t = String(row[c]??'').trim()
-            .toLowerCase()
-            .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-          if(!t) continue;
-          if(cols.desc  < 0 && RE.desc .test(t)) cols.desc  = c;
-          if(cols.vc    < 0 && RE.vc   .test(t)) cols.vc    = c;
-          if(cols.med   < 0 && RE.med  .test(t)) cols.med   = c;
-          if(cols.acum  < 0 && RE.acum .test(t)) cols.acum  = c;
-          if(cols.saldo < 0 && RE.saldo.test(t)) cols.saldo = c;
+        const cell = data[r]?.[0];
+        const n = Number(cell);
+        if(cell !== '' && cell !== null && Number.isInteger(n) && n >= 1 && n <= 9999){
+          dataStart = r;
+          break;
         }
       }
+      if(dataStart < 0) throw new Error('Não foi possível localizar os itens na planilha. Verifique se a coluna "Item" contém números inteiros (1, 2, 3...).');
 
-      // PASSO 3: fallback inteligente — se vc não foi encontrado,
-      // detecta pela primeira coluna numérica positiva da linha de dados
+      // PASSO 2: varre TODAS as linhas acima de dataStart procurando os nomes das colunas
+      // Busca por texto — independente de posição, células mescladas ou linhas extras
+      // Normaliza: remove acentos, minúsculas, espaços extras
+      const normalize = s => String(s??'').toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+        .replace(/\s+/g,' ').trim();
+
+      const RE = {
+        desc:  s => /discrimina|descri[çc]|servico|atividade/.test(s),
+        vc:    s => /valor.{0,30}contrato|total.{0,30}contrato/.test(s),
+        // "no periodo", "no mes", "medicao", "realizado", "periodo" — todas as variações
+        med:   s => /no.{0,15}per[ii]odo|no.{0,10}mes|^medicao$|^realizado$|^per[ii]odo$|esta.{0,15}medicao/.test(s),
+        // "acumulado" — qualquer célula que contenha apenas essa palavra
+        acum:  s => /^acumulado$|acumulado\s*geral|total\s*acumulado/.test(s),
+        saldo: s => /^saldo$/.test(s)
+      };
+
+      const cols = {desc:-1, vc:-1, med:-1, acum:-1, saldo:-1};
+
+      // Varre todas as linhas de cabeçalho (acima de dataStart)
+      // Prioridade: linha mais próxima dos dados (de baixo para cima)
+      for(let r = dataStart - 1; r >= 0; r--){
+        const row = data[r] || [];
+        for(let c=0; c<row.length; c++){
+          const t = normalize(row[c]);
+          if(!t) continue;
+          if(cols.desc  < 0 && RE.desc(t))  cols.desc  = c;
+          if(cols.vc    < 0 && RE.vc(t))    cols.vc    = c;
+          if(cols.med   < 0 && RE.med(t))   cols.med   = c;
+          if(cols.acum  < 0 && RE.acum(t))  cols.acum  = c;
+          if(cols.saldo < 0 && RE.saldo(t)) cols.saldo = c;
+        }
+        // Se todas as colunas principais foram encontradas, para
+        if(cols.vc >= 0 && cols.med >= 0 && cols.acum >= 0) break;
+      }
+
+      // PASSO 3: fallback inteligente — se alguma coluna não foi encontrada por nome,
+      // detecta pela posição relativa à coluna de valor contrato
       if(cols.vc < 0){
+        // Detecta pela primeira coluna numérica positiva da primeira linha de dados
         const fr = data[dataStart] || [];
         const numCols = [];
         for(let c=1; c<fr.length; c++){
           const v = Number(fr[c]);
-          if(fr[c]!=='' && !isNaN(v) && isFinite(v)) numCols.push(c);
+          if(fr[c]!=='' && !isNaN(v) && isFinite(v) && v > 0) numCols.push(c);
         }
-        const vi = numCols.findIndex(c => Number(data[dataStart][c]) > 0);
-        if(vi >= 0){
-          cols.vc    = numCols[vi];
-          if(cols.med   < 0) cols.med   = numCols[vi+1] ?? cols.vc+1;
-          if(cols.acum  < 0) cols.acum  = numCols[vi+2] ?? cols.vc+2;
-          if(cols.saldo < 0) cols.saldo = numCols[vi+3] ?? cols.vc+3;
+        if(numCols.length >= 1){
+          cols.vc    = numCols[0];
+          if(cols.med   < 0) cols.med   = numCols[1] ?? cols.vc + 1;
+          if(cols.acum  < 0) cols.acum  = numCols[2] ?? cols.vc + 2;
+          if(cols.saldo < 0) cols.saldo = numCols[3] ?? cols.vc + 3;
         } else {
+          // Último recurso: posições fixas conhecidas
           cols.vc=12; cols.med=13; cols.acum=14; cols.saldo=15;
         }
       } else {
@@ -710,17 +729,27 @@
         if(cols.saldo < 0) cols.saldo = cols.vc + 3;
       }
 
+      // LOG de diagnóstico (visível no console do navegador)
+      console.log('[XLSX] Aba:', target);
+      console.log('[XLSX] dataStart (linha dos itens):', dataStart);
+      console.log('[XLSX] Colunas detectadas:', cols);
+
       // PASSO 4: lê os itens usando o mapeamento de colunas resolvido
+      // Ancoragem: processa APENAS linhas onde col[0] é número inteiro
       const items = [];
       for(let r=dataStart; r<data.length; r++){
         const row     = data[r] || [];
-        const itemStr = String(row[0]??'').trim();
-        if(!/^\d+$/.test(itemStr)) continue;
+        const cell0   = row[0];
+        const n0      = Number(cell0);
+        // Aceita apenas inteiros positivos — pula totais, subtotais e linhas vazias
+        if(cell0 === '' || cell0 === null || !Number.isInteger(n0) || n0 < 1) continue;
+        const itemStr = String(n0);
 
+        // Busca descrição: usa a coluna mapeada, ou varre colunas entre item e vc
         let descricao = '';
         if(cols.desc >= 0) descricao = String(row[cols.desc]??'').trim();
         if(!descricao){
-          const lim = cols.vc > 0 ? cols.vc : 10;
+          const lim = cols.vc > 1 ? cols.vc : 10;
           for(let c=1; c<lim; c++){
             const v = String(row[c]??'').trim();
             if(v && isNaN(Number(v))){ descricao = v; break; }
@@ -744,6 +773,8 @@
           percentualExecutado: pct
         });
       }
+
+      if(items.length === 0) throw new Error('Nenhum item foi encontrado. Verifique se os números dos itens estão na primeira coluna da planilha.');
 
       // PASSO 5: extrai totais globais do cabeçalho (Valor CT/Aditivo, Acumulado Total)
       const st  = items.reduce((a,i)=>a+i.valorContrato,0);
@@ -815,7 +846,7 @@
     $('loadFile').onclick=()=>loadFromJsonOrExcel(false);
     $('addObraBtn').onclick=()=>loadFromJsonOrExcel(false);
     $('toggleTheme').onclick=()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';if(rows.length) chartInstance = renderCurvaS('sCurveChart','sCurveScrollWrap',rows,chartInstance);};
-    $('exportCsv').onclick=()=>{const fields=['item','descricao','valorContrato','medicao','acumulado','saldo','percentualExecutado'];const body=rows.map(r=>fields.map(k=>`"${String(r[k]??'').replace(/"/g,'""')}`).join(',')).join('\n');const blob=new Blob([fields.join(',')+'\n'+body],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cronograma.csv';a.click();URL.revokeObjectURL(a.href);};
+    $('exportCsv').onclick=()=>{const fields=['item','descricao','valorContrato','medicao','acumulado','saldo','percentualExecutado'];const body=rows.map(r=>fields.map(k=>`"${String(r[k]??'').replace(/"/g,'""')}`).join(',')).join('\n');const blob=new Blob([fields.join(',')+'\\n'+body],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cronograma.csv';a.click();URL.revokeObjectURL(a.href);};
     $('saveJson').onclick=()=>{const o=currentObra();const name=($('projName').value.trim()||'projeto');const payload={obra:name,medicaoAtual:o?.medicaoAtual||'',itens:rows};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name.replace(/[^a-zA-Z0-9\-_]/g,'-').toLowerCase()+'.json';a.click();URL.revokeObjectURL(a.href);};
 
     setupNovaAtividade();
