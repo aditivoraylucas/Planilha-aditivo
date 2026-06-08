@@ -124,21 +124,15 @@ function fallbackColumns(firstDataRow, cols){
 
 /*
  * ─── DETECÇÃO DE VALOR DE CONTRATO ───────────────────────────────────────────
- * Prioridade (ordem exata conforme solicitado):
+ * Prioridade (ordem exata):
  *   1. VALOR CT /TA
  *   2. VALOR DE CONTRATO
  *   3. VALOR DE CONTRATO ATUALIZADO
  *   4. VALOR DE CONTRATO COM ADITIVO
  *   5. VALOR DE CONTRATO COM REAJUSTE
  *   6. VALOR DE CONTRATO COM REAJUSTE E ADITIVO
- *
- * Busca em todas as direções:
- *   - mesma linha (colunas à direita)
- *   - linhas abaixo (mesma coluna e vizinhas)
- *   - label pode estar em qualquer linha/coluna do cabeçalho
  */
 function findValorContrato(rows){
-  // Cada entrada: [prioridade, regex]  — menor prioridade = mais específico = preferido
   const PATTERNS = [
     [1, /valor\s*ct\s*[\/\\]\s*ta/i],
     [2, /^valor\s+de\s+contrato$/i],
@@ -148,18 +142,15 @@ function findValorContrato(rows){
     [6, /valor\s+de\s+contrato\s+com\s+reajuste\s+e\s+aditivo/i],
   ];
 
-  // Candidatos encontrados: { prioridade, valor }
   const candidates = [];
 
   function tryGetValue(rows, r, c){
-    // tenta pegar número na mesma linha (colunas à direita) ou linhas abaixo
     const row = rows[r] || [];
     for(let cc = c+1; cc < Math.min(c+16, row.length); cc++){
       const v = Number(row[cc]); if(v > 100){ return v; }
     }
     for(let rr = r+1; rr <= r+5 && rr < rows.length; rr++){
       const v = Number(rows[rr]?.[c]); if(v > 100){ return v; }
-      // também coluna vizinha
       for(const cc of [c-1, c+1, c+2]){
         if(cc < 0) continue;
         const v2 = Number(rows[rr]?.[cc]); if(v2 > 100){ return v2; }
@@ -183,7 +174,6 @@ function findValorContrato(rows){
   }
 
   if(!candidates.length) return 0;
-  // Ordena: menor prioridade primeiro (mais específico), depois maior valor entre empates
   candidates.sort((a,b) => a.pri - b.pri || b.v - a.v);
   return candidates[0].v;
 }
@@ -195,10 +185,8 @@ function extractMetaFromHeaders(data, firstDataRowIdx){
   let acu=0, contratada='';
   const rows = firstDataRowIdx>0 ? data.slice(0,firstDataRowIdx) : data.slice(0,Math.min(50,data.length));
 
-  // ── Valor de Contrato com prioridade ordenada ──
   const vca = findValorContrato(rows);
 
-  // ── Acumulado ──
   let acumColHeader = -1, acumRowHeader = -1;
   for(let r=0; r<rows.length; r++){
     const row = rows[r]||[];
@@ -247,7 +235,6 @@ function extractMetaFromHeaders(data, firstDataRowIdx){
     }
   }
 
-  // ── Contratada ──
   for(let r=0; r<rows.length; r++){
     const row=rows[r]||[];
     for(let c=0; c<row.length; c++){
@@ -277,63 +264,23 @@ function detectItemCol(data){
   return 0;
 }
 
-/*
- * ─── OUTLINE / AGRUPAMENTO ────────────────────────────────────────────────────
- * Se a planilha tiver estrutura de outline (níveis de agrupamento) ativa,
- * lemos SEMPRE do nível mais profundo (mais detalhado) para evitar dados
- * incompletos de linhas de resumo/totalizadores colapsados.
- *
- * A biblioteca SheetJS expõe os row outlines via ws['!rows'][r].level (0-7).
- * Linhas sem definição de row têm level 0 (nível raiz).
- * Linhas com maior level = maior detalhamento = devem ser lidas.
- *
- * Estratégia:
- *   1. Detectar o level máximo presente nas linhas de dados.
- *   2. Considerar apenas linhas cujo level >= maxLevel (mais profundas).
- *   3. Se nenhum outline existir (todos level 0), comportamento normal.
- */
-function getOutlineLevels(ws, totalRows){
-  const levels = [];
-  const rowsMeta = ws['!rows'] || [];
-  for(let r=0; r<totalRows; r++){
-    const rm = rowsMeta[r];
-    // level: 0 = raiz; hidden via outline collapse = rm?.hidden
-    levels.push({ level: rm?.level ?? 0, hidden: rm?.hidden ?? false });
-  }
-  return levels;
-}
-
-function resolveActiveRows(data, ws){
-  const outlineLevels = getOutlineLevels(ws, data.length);
-  const maxLevel = Math.max(...outlineLevels.map(r => r.level));
-
-  // Se não há outline estruturado (maxLevel === 0), retorna todas as linhas normalmente
-  if(maxLevel === 0) return data.map((_,i) => i);
-
-  // Com outline ativo: incluir apenas linhas do nível mais profundo
-  // (e linhas de cabeçalho level 0 que estejam antes dos dados)
-  const activeIndices = [];
-  for(let i=0; i<data.length; i++){
-    const { level } = outlineLevels[i];
-    if(level >= maxLevel) activeIndices.push(i);
-    else if(level === 0) activeIndices.push(i); // cabeçalho / títulos de seção nível raiz
-  }
-  return activeIndices;
-}
-
 async function readExcelFile(file){
   const buffer=await file.arrayBuffer();
   const wb=XLSX.read(new Uint8Array(buffer),{type:'array',cellDates:false,cellNF:false,cellText:false});
   const sheetName=detectSheet(wb);
   if(!sheetName) throw new Error('Nenhuma aba encontrada na planilha.');
   const ws=wb.Sheets[sheetName];
-  const rawData=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
-  if(!rawData.length) throw new Error(`A aba "${sheetName}" está vazia.`);
 
-  // ── Resolver linhas ativas (respeitar outline/agrupamento) ──
-  const activeIndices = resolveActiveRows(rawData, ws);
-  // Reconstruir data filtrada pelas linhas ativas
-  const data = activeIndices.map(i => rawData[i]);
+  /*
+   * ─── LEITURA DE DADOS ────────────────────────────────────────────────────────
+   * Sempre lê TODAS as linhas da planilha, independente de outline/agrupamento.
+   * Outline (níveis de agrupamento / estrutura de tópicos) é completamente ignorado:
+   *   - Linhas ocultas pelo colapso de grupos são lidas normalmente.
+   *   - Linhas de resumo/totalizadores e linhas de detalhe são tratadas iguais.
+   * Isso garante que planilhas com e sem outline se comportem exatamente da mesma forma.
+   */
+  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+  if(!data.length) throw new Error(`A aba "${sheetName}" está vazia.`);
 
   const itemCol=detectItemCol(data);
   let firstDataRowIdx=-1;
@@ -864,7 +811,6 @@ async function init(){
     const data=snap.data();
     state.admin=data.role==='admin';
     if(data.disabled===true||data.blocked===true){ cleanup(); await signOut(auth); return; }
-    // ── NOME DO USUÁRIO NA TOPBAR ──
     state.userName = data.nome || (user.email ? user.email.split('@')[0] : '');
     const nameEl = $('userNameDisplay');
     if(nameEl) nameEl.textContent = state.userName.toUpperCase();
@@ -1052,4 +998,97 @@ td[contenteditable="true"]:focus{background:var(--bg);box-shadow:inset 0 0 0 2px
           <h3 style="font-size:.9rem;margin-bottom:.75rem;color:var(--text-muted)">CADASTRAR COLABORADOR</h3>
           <form id="addColabForm">
             <div class="form-group"><label>Nome</label><input type="text" id="colabNome" class="form-control" required></div>
-            <div class="form-group"><label>E-mail</label><input ty
+            <div class="form-group"><label>E-mail</label><input type="email" id="colabEmail" class="form-control" required></div>
+            <div class="form-group"><label>Senha</label><input type="password" id="colabSenha" class="form-control" required></div>
+            <div id="colabMsgError" class="error-msg"></div>
+            <button type="submit" id="addColabBtn" class="btn btn-primary" style="width:100%">Cadastrar colaborador</button>
+          </form>
+        </div>
+        <div>
+          <h3 style="font-size:.9rem;margin-bottom:.75rem;color:var(--text-muted)">COLABORADORES ATIVOS</h3>
+          <div id="colabList"></div>
+        </div>
+      </div>
+    </div>
+    <div id="adminStats" class="stats-grid" style="margin-bottom:1.5rem"></div>
+    <div class="admin-layout">
+      <div class="admin-sidebar">
+        <h3>Colaboradores</h3>
+        <div id="adminColabSidebar"></div>
+      </div>
+      <div id="adminDetailPanel"></div>
+    </div>
+  </div>
+</div>
+
+<!-- APP USER -->
+<div id="appView" style="display:none">
+  <div class="app-shell">
+    <div class="app-topbar">
+      <div class="brand">
+        <div class="logo">RA</div>
+        <div class="brand-text"><h1 style="font-size:1.1rem">Cronograma PRO</h1><p>Boletim de Medição</p></div>
+      </div>
+      <div class="header-actions">
+        <span class="user-chip">👤 <span id="userNameDisplay"></span></span>
+        <button class="btn btn-sec" id="toggleTheme" title="Alternar tema">🌙</button>
+        <button class="btn btn-sec" id="logoutBtnUser" style="color:var(--danger)">Sair</button>
+      </div>
+    </div>
+    <aside class="app-aside">
+      <div class="panel-aside">
+        <div class="form-group" style="margin-bottom:.5rem"><label>Obra / Projeto</label><input type="text" id="projName" class="form-control" placeholder="Nome do projeto" readonly></div>
+        <div class="form-group" style="margin-bottom:.5rem"><label>Contratada</label><input type="text" id="projContratada" class="form-control" placeholder="Empresa executora"></div>
+        <div class="form-group" style="margin-bottom:0"><label>Medição atual</label><input type="text" id="projScope" class="form-control" placeholder="Ex: BM 7" readonly></div>
+      </div>
+      <div id="obrasBox"></div>
+      <div style="display:flex;flex-direction:column;gap:.5rem">
+        <button class="btn btn-primary" id="addObraBtn">📂 Nova Obra</button>
+        <button class="btn btn-sec" id="loadFile">🔄 Importar Arquivo</button>
+        <button class="btn btn-sec" id="exportCsv">⬇ Exportar CSV</button>
+        <button class="btn btn-sec" id="saveJson">💾 Salvar JSON</button>
+        <button class="btn btn-danger" id="fillSample">🗑 Limpar Itens</button>
+      </div>
+    </aside>
+    <main class="app-main">
+      <div id="stats" class="stats-grid"></div>
+      <div class="panel" style="margin-bottom:1.5rem">
+        <h3 style="margin-bottom:1rem;font-size:.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Curva S — Progresso Físico</h3>
+        <div class="chart-scroll-wrap" id="sCurveScrollWrap"><div class="chart-container"><canvas id="sCurveChart"></canvas></div></div>
+      </div>
+      <div class="panel" style="margin-bottom:1.5rem">
+        <h3 style="margin-bottom:1rem;font-size:.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Nova Atividade</h3>
+        <div class="nova-ativ-grid">
+          <div class="form-group"><label>Item</label><input type="text" id="fItem" class="form-control" placeholder="Ex: 1.1"></div>
+          <div class="form-group"><label>Descrição</label><input type="text" id="fName" class="form-control" placeholder="Nome do serviço"></div>
+          <div class="form-group"><label>Valor Contrato</label><input type="text" id="fValorContrato" class="form-control" placeholder="0,00"></div>
+          <div class="form-group"><label>Medição</label><input type="text" id="fMedicao" class="form-control" placeholder="0,00"></div>
+          <div class="form-group"><label>Acumulado</label><input type="text" id="fAcumulado" class="form-control" placeholder="0,00"></div>
+          <div class="form-group"><label>Saldo</label><input type="text" id="fSaldo" class="form-control" placeholder="Auto" readonly></div>
+          <div class="form-group"><label>% Exec.</label><input type="text" id="fPct" class="form-control" placeholder="Auto" readonly></div>
+          <div class="form-group" style="justify-content:flex-end"><button class="btn btn-primary" id="addRow" style="width:100%">+ Adicionar</button></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3 style="margin-bottom:1rem;font-size:.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Índice de Itens</h3>
+        <div class="table-container">
+          <table>
+            <thead><tr>
+              <th class="th-sticky">Item</th>
+              <th class="th-sticky">Descrição</th>
+              <th class="th-sticky" style="text-align:right">Valor Contrato</th>
+              <th class="th-sticky" style="text-align:right">Medição</th>
+              <th class="th-sticky" style="text-align:right">Acumulado</th>
+              <th class="th-sticky" style="text-align:right">Saldo</th>
+              <th class="th-sticky" style="text-align:right">% Exec.</th>
+              <th class="th-sticky" style="text-align:right">Ações</th>
+            </tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>
