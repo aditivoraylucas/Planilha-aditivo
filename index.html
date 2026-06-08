@@ -87,55 +87,114 @@ function detectSheet(wb){
   return wb.SheetNames.at(-1);
 }
 
-function detectItemCol(data){
-  for(let r=0; r<Math.min(30,data.length); r++){
-    const row=data[r]||[];
-    for(let c=0; c<Math.min(5,row.length); c++){
-      if(/^\d+$/.test(String(row[c]??'').trim())) return c;
-    }
-  }
-  return 0;
-}
-
-function detectColumns(headerRows, itemRow, itemCol){
+/*
+ * ─── DETECÇÃO DE COLUNAS ────────────────────────────────────────────────────
+ * REGRA PRINCIPAL:
+ *   1. Percorre todas as linhas procurando a linha que contém a palavra "ITEM"
+ *      (ou variações: nº, n°, item) em alguma célula.
+ *   2. Nessa mesma linha identifica as posições de:
+ *      Descrição, Valor Contrato, Medição, Acumulado, Saldo.
+ *   3. Essa linha de cabeçalho é a referência absoluta para todas as planilhas.
+ *      O que muda entre planilhas é apenas qual coluna contém cada informação.
+ *   4. Fallback: se alguma coluna não for encontrada pelo nome, usa posição
+ *      numérica relativa (primeira coluna numérica = vc, segunda = med, etc.)
+ */
+function detectColumns(data){
   const RE = {
-    desc:  /discrimina|descri[çc]ao|servic[oa]|servi[çc]|especifica/,
-    vc:    /valor\s*(total\s*)?(do\s*)?(contrato|ct|contract)|vl\.?\s*(do\s*)?(contrato|ct)|vlr\.?\s*(do\s*)?(contrato|ct)|v\.?\s*contrato/,
-    med:   /no[\s.]*(per[ií]odo|mes|m[eê]s)|^medic[aã]o$|^realizado$|periodo|esta[\s.]*medi|med\.?\s*atual|\bmed\b/,
-    acum:  /acumulado|acum\.?/,
-    saldo: /saldo/
+    item:  /^(item|n[°º\.°]|num\.?|no\.?)$/i,
+    desc:  /discrimina|descri[çc]|servic[oa]|servi[çc]|especific|designa/i,
+    vc:    /valor\s*(total\s*)?(do\s*)?(contrato|ct|contract)|vl\.?\s*(do\s*)?(contrato|ct)|vlr\.?\s*(do\s*)?(contrato|ct)|v\.?\s*contrato|vl\s*ct/i,
+    med:   /no[\s.]*(per[ií]odo|mes|m[eê]s)|^medic[aã]o$|^realizado$|periodo|esta[\s.]*medi|med\.?\s*atual|\bmed\b|medi[çc]/i,
+    acum:  /acumulado|acum\.?/i,
+    saldo: /saldo/i
   };
-  const cols = { desc:-1, vc:-1, med:-1, acum:-1, saldo:-1 };
-  for(const row of headerRows){
-    for(let c=0; c<row.length; c++){
-      const t = norm(row[c]); if(!t) continue;
-      for(const [k, re] of Object.entries(RE)){
-        if(re.test(t)) cols[k] = c;
+
+  // Encontra a linha que contém "ITEM" — essa é a linha de cabeçalho dos dados
+  let headerRowIdx = -1;
+  let itemCol = -1;
+  for(let r = 0; r < Math.min(60, data.length); r++){
+    const row = data[r] || [];
+    for(let c = 0; c < Math.min(10, row.length); c++){
+      if(RE.item.test(norm(row[c]))){
+        headerRowIdx = r;
+        itemCol = c;
+        break;
       }
     }
+    if(headerRowIdx >= 0) break;
   }
-  if(itemRow){
-    for(let c=0; c<itemRow.length; c++){
-      if(c === itemCol) continue;
-      const t = norm(itemRow[c]);
-      if(!t || isNum(itemRow[c])) continue;
-      for(const [k, re] of Object.entries(RE)){
-        if(cols[k] < 0 && re.test(t)) cols[k] = c;
+
+  // Se não achou linha com ITEM, tenta encontrar a primeira linha com número inteiro
+  if(headerRowIdx < 0){
+    for(let r = 0; r < Math.min(60, data.length); r++){
+      const row = data[r] || [];
+      for(let c = 0; c < Math.min(5, row.length); c++){
+        if(/^\d+$/.test(String(row[c]??'').trim())){
+          headerRowIdx = Math.max(0, r - 1);
+          itemCol = c;
+          break;
+        }
       }
+      if(headerRowIdx >= 0) break;
     }
   }
-  if(itemRow){
+
+  const cols = { item: itemCol, desc:-1, vc:-1, med:-1, acum:-1, saldo:-1 };
+
+  // Lê as colunas na MESMA linha do ITEM (cabeçalho)
+  if(headerRowIdx >= 0){
+    const hrow = data[headerRowIdx] || [];
+    for(let c = 0; c < hrow.length; c++){
+      const t = norm(hrow[c]);
+      if(!t || c === itemCol) continue;
+      if(RE.desc.test(t)  && cols.desc  < 0) cols.desc  = c;
+      if(RE.vc.test(t)    && cols.vc    < 0) cols.vc    = c;
+      if(RE.med.test(t)   && cols.med   < 0) cols.med   = c;
+      if(RE.acum.test(t)  && cols.acum  < 0) cols.acum  = c;
+      if(RE.saldo.test(t) && cols.saldo < 0) cols.saldo = c;
+    }
+
+    // Também verifica linhas anteriores ao cabeçalho (multi-linha de header)
+    for(let r = Math.max(0, headerRowIdx - 3); r < headerRowIdx; r++){
+      const row = data[r] || [];
+      for(let c = 0; c < row.length; c++){
+        const t = norm(row[c]);
+        if(!t) continue;
+        if(RE.desc.test(t)  && cols.desc  < 0) cols.desc  = c;
+        if(RE.vc.test(t)    && cols.vc    < 0) cols.vc    = c;
+        if(RE.med.test(t)   && cols.med   < 0) cols.med   = c;
+        if(RE.acum.test(t)  && cols.acum  < 0) cols.acum  = c;
+        if(RE.saldo.test(t) && cols.saldo < 0) cols.saldo = c;
+      }
+    }
+
+    // Fallback numérico: pega a primeira linha de dados e usa colunas numéricas
+    const firstDataRow = data[headerRowIdx + 1] || [];
     const missing = ['vc','med','acum','saldo'].filter(k => cols[k] < 0);
     if(missing.length > 0){
       const usedCols = new Set(Object.values(cols).filter(v => v >= 0));
       const numCols = [];
-      for(let c=itemCol+1; c<itemRow.length; c++){
-        if(!usedCols.has(c) && isNum(itemRow[c]) && Number(itemRow[c]) > 0)
+      for(let c = (itemCol >= 0 ? itemCol : 0) + 1; c < firstDataRow.length; c++){
+        if(!usedCols.has(c) && isNum(firstDataRow[c]) && Number(firstDataRow[c]) > 0)
           numCols.push(c);
       }
-      missing.forEach((k, i) => { if(numCols[i] !== undefined) cols[k] = numCols[i]; });
+      missing.forEach((k, i) => {
+        if(numCols[i] !== undefined) cols[k] = numCols[i];
+      });
+    }
+
+    // Se desc ainda não foi encontrado, pega a primeira coluna texto depois de item
+    if(cols.desc < 0 && itemCol >= 0){
+      const fdr = data[headerRowIdx + 1] || [];
+      const vcLimit = cols.vc > 0 ? cols.vc : itemCol + 12;
+      for(let c = itemCol + 1; c < vcLimit; c++){
+        if(!isNum(fdr[c]) && String(fdr[c]??'').trim()){
+          cols.desc = c; break;
+        }
+      }
     }
   }
+
   return cols;
 }
 
@@ -262,24 +321,28 @@ async function readExcelFile(file){
   const ws=wb.Sheets[sheetName];
   const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
   if(!data.length) throw new Error(`A aba "${sheetName}" está vazia.`);
-  const itemCol = detectItemCol(data);
+
+  // Detecta colunas pela linha do ITEM (nova lógica central)
+  const cols = detectColumns(data);
+  const itemCol = cols.item >= 0 ? cols.item : 0;
+
+  // Identifica a primeira linha de dados (primeiro número inteiro na coluna item)
   let firstDataRowIdx = -1;
-  for(let r=0; r<data.length; r++){
+  for(let r = 0; r < data.length; r++){
     if(/^\d+$/.test(String(data[r][itemCol]??'').trim())){
       firstDataRowIdx = r; break;
     }
   }
-  const headerRows = firstDataRowIdx > 0
-    ? data.slice(0, firstDataRowIdx)
-    : data.slice(0, Math.min(25, data.length));
-  const firstItemRow = firstDataRowIdx >= 0 ? (data[firstDataRowIdx] || []) : [];
-  const cols = detectColumns(headerRows, firstItemRow, itemCol);
+
   const meta = extractMetaFromHeaders(data, firstDataRowIdx);
+
   const items=[], warnings=[];
   for(let r=0; r<data.length; r++){
     const row = data[r]||[];
     const itemStr = String(row[itemCol]??'').trim();
     if(!/^\d+$/.test(itemStr)) continue;
+
+    // Descrição: da coluna detectada, ou primeira célula texto após item
     let descricao = '';
     if(cols.desc >= 0) descricao = String(row[cols.desc]??'').trim();
     if(!descricao){
@@ -289,12 +352,15 @@ async function readExcelFile(file){
         if(v && !isNum(row[c])){ descricao = v; break; }
       }
     }
+
+    // Valores: sempre da mesma linha do item, colunas detectadas pelo cabeçalho
     const vc   = cols.vc   >= 0 ? (Number(row[cols.vc])   || 0) : 0;
     const med  = cols.med  >= 0 ? (Number(row[cols.med])  || 0) : 0;
     const acum = cols.acum >= 0 ? (Number(row[cols.acum]) || 0) : 0;
     let saldo  = cols.saldo >= 0 ? (Number(row[cols.saldo]) || 0) : 0;
     if(!saldo && vc > 0) saldo = vc - acum;
     const p = vc > 0 ? +(acum/vc*100).toFixed(2) : 0;
+
     if(!descricao) warnings.push(`Item ${itemStr}: descrição não encontrada`);
     if(!vc && !acum) warnings.push(`Item ${itemStr}: valores zerados`);
     items.push({
@@ -307,6 +373,7 @@ async function readExcelFile(file){
     });
   }
   if(!items.length) throw new Error(`Nenhum item numérico encontrado na aba "${sheetName}".`);
+
   const sumVC   = items.reduce((a,i)=>a+i.valorContrato,0);
   const sumAcum = items.reduce((a,i)=>a+i.acumulado,0);
   const vca = meta.valorContratoAditivo || sumVC;
@@ -621,7 +688,8 @@ function renderAdminDetail(){
            <td style="text-align:right">${money(r.medicao)}</td>
            <td style="text-align:right">${money(r.acumulado)}</td>
            <td style="text-align:right">${money(r.saldo)}</td>
-           <td style="text-align:right;font-weight:700;color:${Number(r.percentualExecutado)>=99.5?'var(--success)':'var(--text)'}">${Number(r.percentualExecutado||0).toFixed(2)}%</td>
+           <td style="text-align:right;font-weight:700;color:${Number(r.percentualExecutado)>=99.5?'var(--success)':'var(--text)'}">
+             ${Number(r.percentualExecutado||0).toFixed(2)}%</td>
          </tr>`).join('')}</tbody>
        </table></div>
      </div>`;
