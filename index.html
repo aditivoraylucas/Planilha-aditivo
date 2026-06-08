@@ -87,33 +87,6 @@ function detectSheet(wb){
   return wb.SheetNames.at(-1);
 }
 
-/*
- * ─── DETECÇÃO DE COLUNAS ────────────────────────────────────────────────────
- *
- * REGRA FUNDAMENTAL:
- *   1. Encontrar a linha de cabeçalho onde aparece "ITEM" (ou variações).
- *   2. Usar SOMENTE essa linha + até 4 linhas imediatamente anteriores
- *      (bloco de header, para lidar com cabeçalhos em 2+ linhas / mesclados)
- *      para mapear TODAS as colunas: vc, desc, med, acum, saldo.
- *   3. Os dados de cada item são lidos na própria linha do item numérico,
- *      usando os índices de coluna detectados acima.
- *
- * REGRA DE VALOR DE CONTRATO (vc) — prioridade + sobrescrita:
- *   Cada padrão tem peso. Ao varrer o bloco de header da esquerda→direita:
- *     - Novo match com pri MAIOR  → sobrescreve sempre.
- *     - Novo match com pri IGUAL  → sobrescreve (último ganha).
- *     - Novo match com pri MENOR  → ignora.
- *
- *   Prioridades:
- *     1 → valor unitário / vl unit  (mais genérico)
- *     2 → vl ct / vlr ct  (abreviações)
- *     3 → "valor de contrato" / "valor total contrato"  (sem qualificador)
- *     4 → "valor contrato atualizado" / "com reajuste"  (com qualificador)
- *     5 → "valor ct/ta" / "com aditivo"  (mais específico)
- *
- * REGRA DE med / acum / saldo:
- *   Primeiro match vence, buscado apenas no bloco de header do ITEM.
- */
 function detectColumns(data){
   const RE_ITEM = /^(item|n[°º\.°]|num\.?|no\.?)$/i;
   const RE = {
@@ -122,7 +95,6 @@ function detectColumns(data){
     acum:  /acumulado|acum\.?/i,
     saldo: /saldo/i
   };
-
   const VC_PATTERNS = [
     { pri: 1, re: /valor\s*(unit[aá]r|unit\.)?\b/i },
     { pri: 1, re: /vl\.?\s*unit|vlr\.?\s*unit/i },
@@ -133,44 +105,30 @@ function detectColumns(data){
     { pri: 5, re: /valor\s*ct\s*[\/\\]\s*ta/i },
     { pri: 5, re: /valor\s*(de\s+)?contrato\s*(com\s*)?(aditivo|\bta\b)/i },
   ];
-
-  // ── 1. Localizar a linha de cabeçalho (onde aparece "ITEM") ──────────────
-  let headerRowIdx = -1;
-  let itemCol = -1;
-
+  let headerRowIdx = -1, itemCol = -1;
   for(let r = 0; r < Math.min(80, data.length); r++){
     const row = data[r] || [];
     for(let c = 0; c < Math.min(15, row.length); c++){
       if(RE_ITEM.test(norm(row[c]))){
-        headerRowIdx = r;
-        itemCol = c;
-        break;
+        headerRowIdx = r; itemCol = c; break;
       }
     }
     if(headerRowIdx >= 0) break;
   }
-
-  // Fallback: primeira linha com número inteiro nas primeiras colunas
   if(headerRowIdx < 0){
     for(let r = 0; r < Math.min(80, data.length); r++){
       const row = data[r] || [];
       for(let c = 0; c < Math.min(5, row.length); c++){
         if(/^\d+$/.test(String(row[c]??'').trim())){
-          headerRowIdx = Math.max(0, r - 1);
-          itemCol = c;
-          break;
+          headerRowIdx = Math.max(0, r - 1); itemCol = c; break;
         }
       }
       if(headerRowIdx >= 0) break;
     }
   }
-
   const cols = { item: itemCol, desc:-1, vc:-1, med:-1, acum:-1, saldo:-1 };
   let vcPri = -1;
-
   if(headerRowIdx < 0) return cols;
-
-  // ── 2. Montar o bloco de header: até 4 linhas antes + a própria linha ────
   const blockStart = Math.max(0, headerRowIdx - 4);
   const headerBlock = [];
   for(let r = blockStart; r <= headerRowIdx; r++){
@@ -178,18 +136,14 @@ function detectColumns(data){
     if(r < headerRowIdx && /^\d+$/.test(String(row[itemCol]??'').trim())) continue;
     headerBlock.push(row);
   }
-
-  // ── 3. Varrer o bloco para mapear colunas ────────────────────────────────
   for(const row of headerBlock){
     for(let c = 0; c < row.length; c++){
       const t = norm(row[c]);
       if(!t || c === itemCol) continue;
-
       if(RE.desc.test(t)  && cols.desc  < 0) cols.desc  = c;
       if(RE.med.test(t)   && cols.med   < 0) cols.med   = c;
       if(RE.acum.test(t)  && cols.acum  < 0) cols.acum  = c;
       if(RE.saldo.test(t) && cols.saldo < 0) cols.saldo = c;
-
       for(const {pri, re} of VC_PATTERNS){
         if(re.test(t)){
           if(pri >= vcPri){ cols.vc = c; vcPri = pri; }
@@ -198,33 +152,23 @@ function detectColumns(data){
       }
     }
   }
-
-  // ── 4. Fallback numérico para colunas ainda não encontradas ──────────────
   const firstDataRow = data[headerRowIdx + 1] || [];
   const missing = ['vc','med','acum','saldo'].filter(k => cols[k] < 0);
   if(missing.length > 0){
     const usedCols = new Set(Object.values(cols).filter(v => v >= 0));
     const numCols = [];
     for(let c = (itemCol >= 0 ? itemCol : 0) + 1; c < firstDataRow.length; c++){
-      if(!usedCols.has(c) && isNum(firstDataRow[c]) && Number(firstDataRow[c]) > 0)
-        numCols.push(c);
+      if(!usedCols.has(c) && isNum(firstDataRow[c]) && Number(firstDataRow[c]) > 0) numCols.push(c);
     }
-    missing.forEach((k, i) => {
-      if(numCols[i] !== undefined) cols[k] = numCols[i];
-    });
+    missing.forEach((k, i) => { if(numCols[i] !== undefined) cols[k] = numCols[i]; });
   }
-
-  // ── 5. Fallback de descrição ─────────────────────────────────────────────
   if(cols.desc < 0 && itemCol >= 0){
     const fdr = data[headerRowIdx + 1] || [];
     const vcLimit = cols.vc > 0 ? cols.vc : itemCol + 12;
     for(let c = itemCol + 1; c < vcLimit; c++){
-      if(!isNum(fdr[c]) && String(fdr[c]??'').trim()){
-        cols.desc = c; break;
-      }
+      if(!isNum(fdr[c]) && String(fdr[c]??'').trim()){ cols.desc = c; break; }
     }
   }
-
   return cols;
 }
 
@@ -240,14 +184,12 @@ function findValorContrato(rows){
   const candidates = [];
   function tryGetValue(rows, r, c){
     const row = rows[r] || [];
-    for(let cc = c+1; cc < Math.min(c+16, row.length); cc++){
-      const v = Number(row[cc]); if(v > 100){ return v; }
-    }
+    for(let cc = c+1; cc < Math.min(c+16, row.length); cc++){ const v = Number(row[cc]); if(v > 100) return v; }
     for(let rr = r+1; rr <= r+5 && rr < rows.length; rr++){
-      const v = Number(rows[rr]?.[c]); if(v > 100){ return v; }
+      const v = Number(rows[rr]?.[c]); if(v > 100) return v;
       for(const cc of [c-1, c+1, c+2]){
         if(cc < 0) continue;
-        const v2 = Number(rows[rr]?.[cc]); if(v2 > 100){ return v2; }
+        const v2 = Number(rows[rr]?.[cc]); if(v2 > 100) return v2;
       }
     }
     return 0;
@@ -255,13 +197,9 @@ function findValorContrato(rows){
   for(let r = 0; r < rows.length; r++){
     const row = rows[r] || [];
     for(let c = 0; c < row.length; c++){
-      const cell = String(row[c] ?? '').trim();
-      if(!cell) continue;
+      const cell = String(row[c] ?? '').trim(); if(!cell) continue;
       for(const [pri, re] of PATTERNS){
-        if(re.test(cell)){
-          const v = tryGetValue(rows, r, c);
-          if(v > 100) candidates.push({ pri, v });
-        }
+        if(re.test(cell)){ const v = tryGetValue(rows, r, c); if(v > 100) candidates.push({ pri, v }); }
       }
     }
   }
@@ -271,34 +209,28 @@ function findValorContrato(rows){
 }
 
 function extractMetaFromHeaders(data, firstDataRowIdx){
-  const RE_ACUM = /acumulado/i;
-  const RE_MED  = /esta.?medi|medi.?atual/i;
-  const RE_CONT = /contratada/i;
+  const RE_ACUM = /acumulado/i, RE_MED=/esta.?medi|medi.?atual/i, RE_CONT=/contratada/i;
   let acu=0, contratada='';
   const rows = firstDataRowIdx>0 ? data.slice(0,firstDataRowIdx) : data.slice(0,Math.min(50,data.length));
   const vca = findValorContrato(rows);
-  let acumColHeader = -1, acumRowHeader = -1;
+  let acumColHeader=-1, acumRowHeader=-1;
   for(let r=0; r<rows.length; r++){
-    const row = rows[r]||[];
-    let hasAcum=false, hasMedOrSaldo=false, acumC=-1;
+    const row=rows[r]||[]; let hasAcum=false, hasMedOrSaldo=false, acumC=-1;
     for(let c=0; c<row.length; c++){
       const t=norm(row[c]); if(!t) continue;
       if(RE_ACUM.test(t)){ hasAcum=true; acumC=c; }
       if(RE_MED.test(t)||/saldo/i.test(t)) hasMedOrSaldo=true;
     }
-    if(hasAcum && hasMedOrSaldo){ acumColHeader=acumC; acumRowHeader=r; break; }
+    if(hasAcum&&hasMedOrSaldo){ acumColHeader=acumC; acumRowHeader=r; break; }
   }
-  if(acumColHeader>=0 && acumRowHeader>=0){
-    for(let rr=acumRowHeader+1; rr<=acumRowHeader+5 && rr<rows.length; rr++){
-      const v=Number(rows[rr]?.[acumColHeader]);
-      if(v>0){ acu=v; break; }
+  if(acumColHeader>=0&&acumRowHeader>=0){
+    for(let rr=acumRowHeader+1; rr<=acumRowHeader+5&&rr<rows.length; rr++){
+      const v=Number(rows[rr]?.[acumColHeader]); if(v>0){ acu=v; break; }
     }
     if(!acu){
-      for(let rr=acumRowHeader+1; rr<=acumRowHeader+5 && rr<rows.length; rr++){
-        for(const cc of [acumColHeader-1, acumColHeader+1]){
-          if(cc<0) continue;
-          const v=Number(rows[rr]?.[cc]);
-          if(v>0){ acu=v; break; }
+      for(let rr=acumRowHeader+1; rr<=acumRowHeader+5&&rr<rows.length; rr++){
+        for(const cc of [acumColHeader-1,acumColHeader+1]){
+          if(cc<0) continue; const v=Number(rows[rr]?.[cc]); if(v>0){ acu=v; break; }
         }
         if(acu) break;
       }
@@ -310,14 +242,8 @@ function extractMetaFromHeaders(data, firstDataRowIdx){
       for(let c=0; c<row.length; c++){
         const cell=String(row[c]??'').trim();
         if(RE_ACUM.test(cell)){
-          for(let rr=r+1; rr<=r+3 && rr<rows.length; rr++){
-            const v=Number(rows[rr]?.[c]); if(v>0){ acu=v; break; }
-          }
-          if(!acu){
-            for(let cc=c+1; cc<Math.min(c+8,row.length); cc++){
-              const v=Number(row[cc]); if(v>0){ acu=v; break; }
-            }
-          }
+          for(let rr=r+1; rr<=r+3&&rr<rows.length; rr++){ const v=Number(rows[rr]?.[c]); if(v>0){ acu=v; break; } }
+          if(!acu){ for(let cc=c+1; cc<Math.min(c+8,row.length); cc++){ const v=Number(row[cc]); if(v>0){ acu=v; break; } } }
         }
         if(acu) break;
       }
@@ -330,13 +256,8 @@ function extractMetaFromHeaders(data, firstDataRowIdx){
       const cell=String(row[c]??'').trim(); if(!cell) continue;
       if(RE_CONT.test(cell)){
         const after=cell.replace(/^.*contratada\s*:/i,'').trim();
-        if(after && after.length>1) contratada=after;
-        else{
-          for(let cc=c+1; cc<Math.min(c+6,row.length); cc++){
-            const v=String(row[cc]??'').trim();
-            if(v && !isNum(v)){ contratada=v; break; }
-          }
-        }
+        if(after&&after.length>1) contratada=after;
+        else{ for(let cc=c+1; cc<Math.min(c+6,row.length); cc++){ const v=String(row[cc]??'').trim(); if(v&&!isNum(v)){ contratada=v; break; } } }
       }
     }
   }
@@ -351,70 +272,42 @@ async function readExcelFile(file){
   const ws=wb.Sheets[sheetName];
   const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
   if(!data.length) throw new Error(`A aba "${sheetName}" está vazia.`);
-
-  const cols = detectColumns(data);
-  const itemCol = cols.item >= 0 ? cols.item : 0;
-
-  let firstDataRowIdx = -1;
-  for(let r = 0; r < data.length; r++){
-    if(/^\d+$/.test(String(data[r][itemCol]??'').trim())){
-      firstDataRowIdx = r; break;
-    }
-  }
-
-  const meta = extractMetaFromHeaders(data, firstDataRowIdx);
-
+  const cols=detectColumns(data);
+  const itemCol=cols.item>=0?cols.item:0;
+  let firstDataRowIdx=-1;
+  for(let r=0; r<data.length; r++){ if(/^\d+$/.test(String(data[r][itemCol]??'').trim())){ firstDataRowIdx=r; break; } }
+  const meta=extractMetaFromHeaders(data,firstDataRowIdx);
   const items=[], warnings=[];
   for(let r=0; r<data.length; r++){
-    const row = data[r]||[];
-    const itemStr = String(row[itemCol]??'').trim();
+    const row=data[r]||[];
+    const itemStr=String(row[itemCol]??'').trim();
     if(!/^\d+$/.test(itemStr)) continue;
-
-    let descricao = '';
-    if(cols.desc >= 0) descricao = String(row[cols.desc]??'').trim();
+    let descricao='';
+    if(cols.desc>=0) descricao=String(row[cols.desc]??'').trim();
     if(!descricao){
-      const lim = cols.vc > 0 ? cols.vc : itemCol + 12;
-      for(let c=itemCol+1; c<lim; c++){
-        const v = String(row[c]??'').trim();
-        if(v && !isNum(row[c])){ descricao = v; break; }
-      }
+      const lim=cols.vc>0?cols.vc:itemCol+12;
+      for(let c=itemCol+1; c<lim; c++){ const v=String(row[c]??'').trim(); if(v&&!isNum(row[c])){ descricao=v; break; } }
     }
-
-    const vc   = cols.vc   >= 0 ? (Number(row[cols.vc])   || 0) : 0;
-    const med  = cols.med  >= 0 ? (Number(row[cols.med])  || 0) : 0;
-    const acum = cols.acum >= 0 ? (Number(row[cols.acum]) || 0) : 0;
-    let saldo  = cols.saldo >= 0 ? (Number(row[cols.saldo]) || 0) : 0;
-    if(!saldo && vc > 0) saldo = vc - acum;
-    const p = vc > 0 ? +(acum/vc*100).toFixed(2) : 0;
-
+    const vc  =cols.vc  >=0?(Number(row[cols.vc]  )||0):0;
+    const med =cols.med >=0?(Number(row[cols.med]) ||0):0;
+    const acum=cols.acum>=0?(Number(row[cols.acum])||0):0;
+    let saldo =cols.saldo>=0?(Number(row[cols.saldo])||0):0;
+    if(!saldo&&vc>0) saldo=vc-acum;
+    const p=vc>0?+(acum/vc*100).toFixed(2):0;
     if(!descricao) warnings.push(`Item ${itemStr}: descrição não encontrada`);
-    if(!vc && !acum) warnings.push(`Item ${itemStr}: valores zerados`);
-    items.push({
-      item: itemStr, descricao,
-      valorContrato: +vc.toFixed(2),
-      medicao:       +med.toFixed(2),
-      acumulado:     +acum.toFixed(2),
-      saldo:         +saldo.toFixed(2),
-      percentualExecutado: p
-    });
+    if(!vc&&!acum) warnings.push(`Item ${itemStr}: valores zerados`);
+    items.push({ item:itemStr, descricao, valorContrato:+vc.toFixed(2), medicao:+med.toFixed(2), acumulado:+acum.toFixed(2), saldo:+saldo.toFixed(2), percentualExecutado:p });
   }
   if(!items.length) throw new Error(`Nenhum item numérico encontrado na aba "${sheetName}".`);
-
-  const sumVC   = items.reduce((a,i)=>a+i.valorContrato,0);
-  const sumAcum = items.reduce((a,i)=>a+i.acumulado,0);
-  const vca = meta.valorContratoAditivo || sumVC;
-  const acu = meta.acumuladoTotal > 0 ? meta.acumuladoTotal : sumAcum;
+  const sumVC=items.reduce((a,i)=>a+i.valorContrato,0);
+  const sumAcum=items.reduce((a,i)=>a+i.acumulado,0);
+  const vca=meta.valorContratoAditivo||sumVC;
+  const acu=meta.acumuladoTotal>0?meta.acumuladoTotal:sumAcum;
   return {
-    nome: baseName(file.name),
-    nomeProjeto: wb.Props?.Title || baseName(file.name) || 'Nova obra',
-    medicaoAtual: sheetName,
-    contratada: meta.contratada || '',
-    itens: items, warnings,
-    resumo:{
-      total: sumVC, acumulado: sumAcum,
-      percentual: vca>0 ? +(acu/vca*100).toFixed(2) : 0,
-      valorContratoAditivo: vca, acumuladoTotal: acu
-    }
+    nome:baseName(file.name), nomeProjeto:wb.Props?.Title||baseName(file.name)||'Nova obra',
+    medicaoAtual:sheetName, contratada:meta.contratada||'',
+    itens:items, warnings,
+    resumo:{ total:sumVC, acumulado:sumAcum, percentual:vca>0?+(acu/vca*100).toFixed(2):0, valorContratoAditivo:vca, acumuladoTotal:acu }
   };
 }
 
@@ -433,15 +326,10 @@ function normalizeRows(list){
 async function importFile(replace=false){
   const input=document.createElement('input');
   input.type='file';
-  input.accept=[
-    '.xlsx','.xls','.xlsm','.xlsb','.xlam','.xla','.ods','.csv','.json',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/vnd.ms-excel',
-    'application/vnd.ms-excel.sheet.macroEnabled.12',
-    'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
-    'application/vnd.oasis.opendocument.spreadsheet',
-    'text/csv','application/json'
-  ].join(',');
+  input.accept=['.xlsx','.xls','.xlsm','.xlsb','.xlam','.xla','.ods','.csv','.json',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.ms-excel',
+    'application/vnd.ms-excel.sheet.macroEnabled.12','application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+    'application/vnd.oasis.opendocument.spreadsheet','text/csv','application/json'].join(',');
   input.onchange=async e=>{
     if(!e.target.files.length) return;
     const file=e.target.files[0];
@@ -449,29 +337,18 @@ async function importFile(replace=false){
     try{
       let obj,rows=[];
       if(EXCEL_EXTS.has(ext)){
-        obj=await readExcelFile(file);
-        rows=normalizeRows(obj.itens);
+        obj=await readExcelFile(file); rows=normalizeRows(obj.itens);
         if(obj.warnings?.length) console.warn('[Import]',obj.warnings.slice(0,5).join('\n'));
       } else if(ext==='json'){
-        const text=await file.text();
-        obj=JSON.parse(text);
+        const text=await file.text(); obj=JSON.parse(text);
         rows=Array.isArray(obj)?normalizeRows(obj):normalizeRows(obj.itens);
-        if(!rows.length&&!Array.isArray(obj)&&!Array.isArray(obj.itens))
-          throw new Error('JSON inválido.');
-      } else {
-        obj=await readExcelFile(file);
-        rows=normalizeRows(obj.itens);
-      }
+        if(!rows.length&&!Array.isArray(obj)&&!Array.isArray(obj.itens)) throw new Error('JSON inválido.');
+      } else { obj=await readExcelFile(file); rows=normalizeRows(obj.itens); }
       const obraId=replace&&state.selectedObraId?state.selectedObraId:('obra_'+Date.now());
       const obraNome=baseName(file.name)||obj?.nome||'Nova obra';
-      const obra={
-        id:obraId, nome:obraNome,
-        nomeProjeto:obj?.nomeProjeto||obj?.obra||obraNome,
-        contratada:obj?.contratada||'',
-        arquivoNome:file.name, origem:ext,
-        medicaoAtual:obj?.medicaoAtual||'',
-        itens:rows, resumo:obj?.resumo||{percentual:0}
-      };
+      const obra={ id:obraId, nome:obraNome, nomeProjeto:obj?.nomeProjeto||obj?.obra||obraNome,
+        contratada:obj?.contratada||'', arquivoNome:file.name, origem:ext,
+        medicaoAtual:obj?.medicaoAtual||'', itens:rows, resumo:obj?.resumo||{percentual:0} };
       await saveObra(obra);
       state.selectedObraId=obraId;
       showToast(`✅ ${rows.length} itens importados`);
@@ -500,7 +377,7 @@ function renderCurvaS(canvasId,wrapId,itens,prev){
   const wrap=$(wrapId);
   if(wrap){
     if(minW>wrap.offsetWidth){ wrap.style.overflowX='auto'; canvas.style.minWidth=minW+'px'; }
-    else { wrap.style.overflowX='hidden'; canvas.style.minWidth=''; }
+    else{ wrap.style.overflowX='hidden'; canvas.style.minWidth=''; }
   }
   return new Chart(canvas.getContext('2d'),{
     type:'bar',
@@ -576,15 +453,8 @@ function renderObrasBox(){
     await deleteObra(idToDelete);
     const restantes=state.obras.filter(o=>o.id!==idToDelete);
     state.selectedObraId=restantes.length?restantes[0].id:null;
-    if(state.selectedObraId){
-      const o=state.obras.find(x=>x.id===state.selectedObraId);
-      if(o) applySelected(o);
-    } else {
-      state.rows=[];
-      $('projName').value='';
-      $('projContratada').value='';
-      $('projScope').value='';
-    }
+    if(state.selectedObraId){ const o=state.obras.find(x=>x.id===state.selectedObraId); if(o) applySelected(o); }
+    else{ state.rows=[]; $('projName').value=''; $('projContratada').value=''; $('projScope').value=''; }
     renderAll();
   };
 }
@@ -735,7 +605,7 @@ function setupAdminSubs(){
         return;
       }
       if(!state.allUsers[d.id]) state.allUsers[d.id]={nome:data.nome||data.email,email:data.email,role:data.role,blocked:!!data.blocked,obras:[]};
-      else { state.allUsers[d.id].nome=data.nome||data.email; state.allUsers[d.id].email=data.email; state.allUsers[d.id].role=data.role; state.allUsers[d.id].blocked=!!data.blocked; }
+      else{ state.allUsers[d.id].nome=data.nome||data.email; state.allUsers[d.id].email=data.email; state.allUsers[d.id].role=data.role; state.allUsers[d.id].blocked=!!data.blocked; }
       if(data.role!=='admin'&&!state.adminSubs[d.id]){
         state.adminSubs[d.id]=onSnapshot(collection(db,'users',d.id,'obras'),oSnap=>{
           state.allUsers[d.id].obras=oSnap.docs.map(o=>({id:o.id,...o.data()}));
@@ -752,9 +622,8 @@ function listenUserObras(){
   if(state.unsubUserObras) state.unsubUserObras();
   state.unsubUserObras=onSnapshot(collection(db,'users',state.user.uid,'obras'),snap=>{
     state.obras=snap.docs.map(d=>({id:d.id,...d.data()}));
-    if(state.selectedObraId&&!state.obras.find(o=>o.id===state.selectedObraId)){
+    if(state.selectedObraId&&!state.obras.find(o=>o.id===state.selectedObraId))
       state.selectedObraId=state.obras.length?state.obras[0].id:null;
-    }
     if(!state.selectedObraId&&state.obras.length) state.selectedObraId=state.obras[0].id;
     if(state.selectedObraId){ const o=state.obras.find(x=>x.id===state.selectedObraId); if(o) applySelected(o); }
     renderAll();
@@ -786,7 +655,7 @@ function setupNovaAtividade(){
   const recalc=()=>{
     const vc=parseMoney($('fValorContrato').value), acu=parseMoney($('fAcumulado').value);
     if(vc>0){ $('fSaldo').value=(vc-acu).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); $('fPct').value=(acu/vc*100).toFixed(2); }
-    else { $('fSaldo').value=''; $('fPct').value=''; }
+    else{ $('fSaldo').value=''; $('fPct').value=''; }
   };
   ['fValorContrato','fMedicao','fAcumulado'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input',recalc); });
   $('addRow').onclick=()=>{
@@ -816,6 +685,14 @@ function bindEvents(){
   $('toggleTheme').onclick=()=>{
     document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';
     if(state.rows.length) state.chartUser=renderCurvaS('sCurveChart','sCurveScrollWrap',state.rows,state.chartUser);
+  };
+  // botão hambúrguer (mobile) — abre/fecha aside
+  const menuBtn=$('menuBtn');
+  if(menuBtn) menuBtn.onclick=()=>{
+    const aside=document.querySelector('#appView .app-aside');
+    if(!aside) return;
+    const open=aside.classList.toggle('aside-open');
+    menuBtn.textContent=open?'✕':'☰';
   };
   $('adminToggleColab').onclick=()=>{ const p=$('adminColabPanel'); p.style.display=p.style.display==='none'?'block':'none'; };
   $('loadFile').onclick=()=>importFile(false);
@@ -891,9 +768,8 @@ async function init(){
     const data=snap.data();
     state.admin=data.role==='admin';
     if(data.disabled===true||data.blocked===true){ cleanup(); await signOut(auth); return; }
-    state.userName = data.nome || (user.email ? user.email.split('@')[0] : '');
-    const nameEl = $('userNameDisplay');
-    if(nameEl) nameEl.textContent = state.userName.toUpperCase();
+    state.userName=data.nome||(user.email?user.email.split('@')[0]:'');
+    const nameEl=$('userNameDisplay'); if(nameEl) nameEl.textContent=state.userName.toUpperCase();
     if(state.admin){
       showView('adminView'); setupAdminSubs();
       if(!state.colabFormReady){ state.colabFormReady=true; setupColabForm(); }
@@ -943,15 +819,41 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
 .btn-warning{color:#92400e;background:rgba(245,158,11,.12)}
 .btn-success{color:#065f46;background:rgba(16,185,129,.12)}
 
-/* ── Layout principal ── */
-.app-shell{display:grid;grid-template-columns:var(--aside-w) 1fr;grid-template-rows:auto 1fr;height:100vh;overflow:hidden}
-.app-topbar{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;padding:.875rem 2rem;background:var(--surface);border-bottom:1px solid var(--border);gap:.75rem;z-index:20}
-.app-aside{grid-column:1;grid-row:2;overflow-y:auto;background:var(--surface);border-right:1px solid var(--border);padding:1rem;display:flex;flex-direction:column;gap:.75rem}
-.app-main{grid-column:2;grid-row:2;overflow-y:auto;padding:1.5rem 2rem}
+/* ════════════════════════════════════════════════════
+   LAYOUT DESKTOP (≥ 901 px)
+   ════════════════════════════════════════════════════ */
+.app-shell{
+  display:grid;
+  grid-template-columns:var(--aside-w) 1fr;
+  grid-template-rows:auto 1fr;
+  height:100vh;
+  overflow:hidden;
+}
+.app-topbar{
+  grid-column:1/-1;
+  display:flex;justify-content:space-between;align-items:center;
+  padding:.875rem 2rem;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  gap:.75rem;z-index:20;
+}
+.app-aside{
+  grid-column:1;grid-row:2;
+  overflow-y:auto;
+  background:var(--surface);border-right:1px solid var(--border);
+  padding:1rem;
+  display:flex;flex-direction:column;gap:.75rem;
+}
+.app-main{
+  grid-column:2;grid-row:2;
+  overflow-y:auto;
+  padding:1.5rem 2rem;
+}
 .brand{display:flex;align-items:center;gap:1rem;min-width:0}
 .brand-text h1{font-size:1.25rem;font-weight:700;white-space:nowrap}
 .brand-text p{color:var(--text-muted);font-size:.8rem;white-space:nowrap}
 .header-actions{display:flex;gap:.5rem;align-items:center;flex-shrink:0}
+/* botão hambúrguer — oculto no desktop */
+.menu-btn{display:none;background:none;border:none;cursor:pointer;font-size:1.4rem;padding:.25rem .5rem;color:var(--text);line-height:1}
 .user-chip{display:inline-flex;align-items:center;gap:.4rem;background:rgba(99,102,241,.1);color:var(--primary);border:1px solid rgba(99,102,241,.25);border-radius:999px;padding:.3rem .85rem;font-size:.875rem;font-weight:600}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:1.5rem;box-shadow:var(--shadow-sm)}
 .panel+.panel{margin-top:1.25rem}
@@ -994,48 +896,92 @@ tr:hover td{background:var(--surface-hover)}
 .btnTopo{position:fixed;bottom:1.5rem;right:1.5rem;z-index:100;width:2.5rem;height:2.5rem;border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .3s;font-size:1.1rem;padding:0}
 .btnTopo.visible{opacity:1;pointer-events:all}
 
-/* ── Mobile: aside colapsável ── */
+/* ════════════════════════════════════════════════════
+   LAYOUT MOBILE (≤ 900 px)
+   Estratégia: app-shell vira fluxo normal (sem altura
+   fixa), aside colapsável via botão ☰ no topbar,
+   main ocupa 100% da largura e rola livremente.
+   ════════════════════════════════════════════════════ */
 @media(max-width:900px){
+  /* Shell: fluxo normal, sem grid de 2 colunas */
   .app-shell{
-    grid-template-columns:1fr;
-    grid-template-rows:auto auto 1fr;
-    height:100vh;
+    display:flex;
+    flex-direction:column;
+    height:auto;
+    min-height:100vh;
+    overflow:visible;
   }
+  /* Topbar fixo no topo */
+  .app-topbar{
+    position:sticky;
+    top:0;
+    z-index:50;
+    padding:.65rem 1rem;
+  }
+  /* Hambúrguer visível */
+  .menu-btn{ display:inline-flex; }
+  /* Aside: oculta por padrão, desliza de cima */
   .app-aside{
-    grid-column:1;grid-row:2;
-    border-right:none;border-bottom:1px solid var(--border);
-    padding:.75rem 1rem;
-    flex-direction:row;flex-wrap:wrap;gap:.5rem;
-    overflow-y:visible;overflow-x:auto;
-    max-height:none;
+    display:none;
+    width:100%;
+    border-right:none;
+    border-bottom:1px solid var(--border);
+    padding:.875rem 1rem;
+    flex-direction:column;
+    gap:.75rem;
+    overflow:visible;
   }
-  .app-aside .panel{flex:1 1 220px;min-width:200px;padding:.75rem}
-  .app-main{grid-column:1;grid-row:3;padding:1rem;overflow-y:auto}
-  .admin-layout{grid-template-columns:1fr}
+  .app-aside.aside-open{ display:flex; }
+  /* Main: fluxo normal, padding confortável */
+  .app-main{
+    grid-column:unset;
+    grid-row:unset;
+    width:100%;
+    overflow:visible;
+    padding:1rem;
+  }
+  /* Stats: 2 colunas no mobile */
+  .stats-grid{
+    grid-template-columns:repeat(2,1fr);
+    gap:.6rem;
+    margin-bottom:1rem;
+  }
+  .admin-stats-grid{
+    grid-template-columns:repeat(2,1fr);
+    gap:.6rem;
+  }
+  .stat-value{ font-size:1.1rem; }
+  .stat-label{ font-size:.65rem; }
+  .panel{ padding:1rem; }
+  /* Tabela: scroll horizontal interno */
+  .table-container{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  th,td{ padding:.4rem .6rem; font-size:.72rem; }
+  .td-desc{ max-width:140px; }
+  /* Gráfico: altura menor mas presente */
+  .chart-container{ height:180px; }
+  /* Formulário de nova atividade: 2 cols */
+  .add-form-grid{ grid-template-columns:1fr 1fr; gap:.5rem; }
+  /* Botão topo */
+  .btnTopo{ bottom:1rem; right:.75rem; }
+  /* Admin layout: 1 coluna */
+  .admin-layout{ grid-template-columns:1fr; }
+  /* Textos do topbar */
+  .brand-text p{ display:none; }
+  .brand-text h1{ font-size:.95rem; }
+  .user-chip{ font-size:.75rem; padding:.25rem .6rem; }
 }
-@media(max-width:640px){
-  .app-topbar{padding:.65rem .875rem;flex-wrap:wrap;gap:.5rem}
-  .brand-text h1{font-size:.95rem}
-  .brand-text p{display:none}
-  .user-chip{font-size:.75rem;padding:.25rem .6rem}
-  .app-aside{flex-direction:column;gap:.5rem;padding:.75rem}
-  .app-aside .panel{flex:none;width:100%}
-  .app-main{padding:.75rem}
-  .stats-grid{grid-template-columns:repeat(2,1fr);gap:.6rem;margin-bottom:1rem}
-  .stat-value{font-size:1.1rem}
-  .stat-label{font-size:.65rem}
-  .panel{padding:1rem}
-  .add-form-grid{grid-template-columns:1fr 1fr;gap:.5rem}
-  th,td{padding:.4rem .6rem;font-size:.72rem}
-  .td-desc{max-width:120px}
-  .chart-container{height:160px}
-  .btnTopo{bottom:1rem;right:.75rem}
+
+/* Telas muito pequenas (< 400 px): stats em 1 coluna */
+@media(max-width:400px){
+  .stats-grid{ grid-template-columns:1fr; }
+  .admin-stats-grid{ grid-template-columns:1fr; }
+  .add-form-grid{ grid-template-columns:1fr; }
 }
 </style>
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════ LOGIN ═══════════════════════════════════════ -->
+<!-- LOGIN -->
 <div id="loginView" style="display:flex">
   <div class="login-wrapper" style="width:100%">
     <div class="login-card">
@@ -1066,12 +1012,14 @@ tr:hover td{background:var(--surface-hover)}
   </div>
 </div>
 
-<!-- ══════════════════════════════════════ APP USER ══════════════════════════════════════ -->
+<!-- APP COLABORADOR -->
 <div id="appView" style="display:none">
   <div class="app-shell">
     <header class="app-topbar">
       <div class="brand">
-        <svg width="36" height="36" viewBox="0 0 48 48" fill="none">
+        <!-- Hambúrguer — visível apenas no mobile via CSS -->
+        <button id="menuBtn" class="menu-btn" aria-label="Menu">☰</button>
+        <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
           <rect width="48" height="48" rx="10" fill="#4f46e5"/>
           <path d="M14 34V18l10-6 10 6v16" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
           <rect x="20" y="24" width="8" height="10" rx="1.5" fill="#fff"/>
@@ -1085,6 +1033,7 @@ tr:hover td{background:var(--surface-hover)}
       </div>
     </header>
 
+    <!-- Aside: ferramentas / projeto / ações -->
     <aside class="app-aside">
       <div class="panel" style="padding:1rem">
         <div class="section-title" style="margin-bottom:.75rem">📁 Obras</div>
@@ -1110,9 +1059,12 @@ tr:hover td{background:var(--surface-hover)}
       </div>
     </aside>
 
+    <!-- Main: dashboard completo -->
     <main class="app-main">
+      <!-- Cards de resumo -->
       <div class="stats-grid" id="stats"></div>
 
+      <!-- Gráfico Curva S -->
       <div class="panel" style="margin-bottom:1.25rem">
         <h3 style="margin-bottom:1rem">Curva S — Progresso Físico</h3>
         <div class="chart-scroll-wrap" id="sCurveScrollWrap">
@@ -1120,6 +1072,7 @@ tr:hover td{background:var(--surface-hover)}
         </div>
       </div>
 
+      <!-- Formulário nova atividade -->
       <div class="panel" style="margin-bottom:1.25rem">
         <h3 style="margin-bottom:1rem">➕ Nova atividade</h3>
         <div class="add-form-grid">
@@ -1134,6 +1087,7 @@ tr:hover td{background:var(--surface-hover)}
         </div>
       </div>
 
+      <!-- Índice de Itens -->
       <div class="panel">
         <h3 style="margin-bottom:1rem">📋 Índice de Itens</h3>
         <div class="table-container">
@@ -1145,72 +1099,3 @@ tr:hover td{background:var(--surface-hover)}
                 <th style="text-align:right">Valor Contrato</th>
                 <th style="text-align:right">Medição</th>
                 <th style="text-align:right">Acumulado</th>
-                <th style="text-align:right">Saldo</th>
-                <th style="text-align:right">% Exec.</th>
-                <th style="text-align:right">Ação</th>
-              </tr>
-            </thead>
-            <tbody id="tbody"></tbody>
-          </table>
-        </div>
-      </div>
-    </main>
-  </div>
-  <button id="btnTopo" class="btn btn-primary btnTopo" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
-</div>
-
-<!-- ══════════════════════════════════════ ADMIN ══════════════════════════════════════ -->
-<div id="adminView" style="display:none">
-  <div class="app-shell">
-    <header class="app-topbar">
-      <div class="brand">
-        <svg width="36" height="36" viewBox="0 0 48 48" fill="none">
-          <rect width="48" height="48" rx="10" fill="#4f46e5"/>
-          <path d="M14 34V18l10-6 10 6v16" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
-          <rect x="20" y="24" width="8" height="10" rx="1.5" fill="#fff"/>
-        </svg>
-        <div class="brand-text"><h1>Cronograma PRO</h1><p>Painel Administrativo</p></div>
-      </div>
-      <div class="header-actions">
-        <button id="adminToggleColab" class="btn btn-sec">👥 Colaboradores</button>
-        <button id="toggleTheme" class="btn btn-sec" style="padding:.5rem .75rem;display:none">🌙</button>
-        <button id="logoutBtnAdmin" class="btn btn-sec" style="padding:.5rem .75rem">Sair</button>
-      </div>
-    </header>
-
-    <aside class="app-aside">
-      <div class="section-title" style="padding:.25rem .5rem">👥 Colaboradores</div>
-      <div id="adminColabSidebar"></div>
-    </aside>
-
-    <main class="app-main">
-      <div class="stats-grid" id="adminStats" style="margin-bottom:1.5rem"></div>
-
-      <div id="adminDetailPanel">
-        <p style="color:var(--text-muted);padding:1rem">Selecione um colaborador ao lado.</p>
-      </div>
-
-      <!-- Painel de gerenciamento de colaboradores -->
-      <div id="adminColabPanel" style="display:none;margin-top:1.5rem">
-        <div class="panel">
-          <h3 style="margin-bottom:1.25rem">Cadastrar novo colaborador</h3>
-          <form id="addColabForm" style="display:flex;flex-direction:column;gap:.875rem;max-width:400px">
-            <div class="form-group"><label>Nome</label><input id="colabNome" class="form-control" placeholder="Nome completo" required/></div>
-            <div class="form-group"><label>E-mail</label><input id="colabEmail" class="form-control" type="email" placeholder="email@exemplo.com" required/></div>
-            <div class="form-group"><label>Senha inicial</label><input id="colabSenha" class="form-control" type="password" placeholder="Mínimo 6 caracteres" required minlength="6"/></div>
-            <div id="colabMsgError" style="display:none;color:var(--danger);font-size:.8rem;background:rgba(239,68,68,.08);padding:.5rem .75rem;border-radius:var(--radius-sm)"></div>
-            <button id="addColabBtn" type="submit" class="btn btn-primary" style="align-self:flex-start">Cadastrar colaborador</button>
-          </form>
-        </div>
-
-        <div class="panel" style="margin-top:1.25rem">
-          <h3 style="margin-bottom:1rem">Colaboradores cadastrados</h3>
-          <div id="colabList" style="display:flex;flex-direction:column;gap:.5rem"></div>
-        </div>
-      </div>
-    </main>
-  </div>
-</div>
-
-</body>
-</html>
