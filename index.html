@@ -90,56 +90,63 @@ function detectSheet(wb){
 /*
  * ─── DETECÇÃO DE COLUNAS ────────────────────────────────────────────────────
  *
- * REGRA PARA VALOR DE CONTRATO (vc):
- *   Usa sistema de PRIORIDADE + SOBRESCRITA.
- *   Cada padrão tem um peso (menor = mais genérico, maior = mais específico).
- *   Ao varrer a linha de cabeçalho da ESQUERDA para a DIREITA:
- *     - Se o novo match tem prioridade MAIOR que o atual  → sobrescreve sempre.
- *     - Se o novo match tem prioridade IGUAL ao atual     → sobrescreve (último ganha).
- *     - Se o novo match tem prioridade MENOR que o atual  → ignora.
+ * REGRA FUNDAMENTAL:
+ *   1. Encontrar a linha de cabeçalho onde aparece "ITEM" (ou variações).
+ *   2. Usar SOMENTE essa linha + até 4 linhas imediatamente anteriores
+ *      (bloco de header, para lidar com cabeçalhos em 2+ linhas / mesclados)
+ *      para mapear TODAS as colunas: vc, desc, med, acum, saldo.
+ *   3. Os dados de cada item são lidos na própria linha do item numérico,
+ *      usando os índices de coluna detectados acima.
+ *
+ * REGRA DE VALOR DE CONTRATO (vc) — prioridade + sobrescrita:
+ *   Cada padrão tem peso. Ao varrer o bloco de header da esquerda→direita:
+ *     - Novo match com pri MAIOR  → sobrescreve sempre.
+ *     - Novo match com pri IGUAL  → sobrescreve (último ganha).
+ *     - Novo match com pri MENOR  → ignora.
+ *
+ *   Prioridades:
+ *     1 → valor unitário / vl unit  (mais genérico)
+ *     2 → vl ct / vlr ct  (abreviações)
+ *     3 → "valor de contrato" / "valor total contrato"  (sem qualificador)
+ *     4 → "valor contrato atualizado" / "com reajuste"  (com qualificador)
+ *     5 → "valor ct/ta" / "com aditivo"  (mais específico)
  *
  *   Exemplo: linha com "VALOR UNIT. COM BDI" (pri=1), depois
  *   "VALOR TOTAL DO CONTRATO ATUALIZADO REAJUSTE 1" (pri=4), depois
  *   "VALOR TOTAL DO CONTRATO ATUALIZADO REAJUSTE 2" (pri=4)
- *   → usa a coluna de "REAJUSTE 2" (última de mesma prioridade máxima).
+ *   → usa REAJUSTE 2 (último de mesma prioridade máxima).
  *
- * PRIORIDADES (vc):
- *   1 → valor unitário / vl unit  (mais genérico — descartado se existir algo melhor)
- *   2 → "valor contrato" simples / vl ct / vlr ct
- *   3 → "valor de contrato" / "valor total contrato"
- *   4 → "valor de contrato com reajuste" / "valor total contrato atualizado"
- *   5 → "valor de contrato com aditivo" / "valor ct / ta"
- *
- * As demais colunas (desc, med, acum, saldo) mantêm lógica de PRIMEIRO match.
+ * REGRA DE med / acum / saldo:
+ *   Primeiro match vence, buscado apenas no bloco de header do ITEM.
  */
 function detectColumns(data){
+  const RE_ITEM = /^(item|n[°º\.°]|num\.?|no\.?)$/i;
   const RE = {
-    item:  /^(item|n[°º\.°]|num\.?|no\.?)$/i,
     desc:  /discrimina|descri[çc]|servic[oa]|servi[çc]|especific|designa/i,
     med:   /no[\s.]*(per[ií]odo|mes|m[eê]s)|^medic[aã]o$|^realizado$|periodo|esta[\s.]*medi|med\.?\s*atual|\bmed\b|medi[çc]/i,
     acum:  /acumulado|acum\.?/i,
     saldo: /saldo/i
   };
 
-  // Padrões de Valor de Contrato com prioridade (maior número = mais específico = vence)
   const VC_PATTERNS = [
     { pri: 1, re: /valor\s*(unit[aá]r|unit\.?)\b/i },
     { pri: 1, re: /vl\.?\s*unit|vlr\.?\s*unit/i },
-    { pri: 2, re: /vl\.?\s*(do\s*)?(contrato|ct)|vlr\.?\s*(do\s*)?(contrato|ct)|v\.?\s*contrato|vl\s*ct/i },
+    { pri: 2, re: /vl\.?\s*(do\s*)?(contrato|ct)\b|vlr\.?\s*(do\s*)?(contrato|ct)\b|v\.?\s*contrato\b|\bvl\s*ct\b/i },
     { pri: 3, re: /valor\s+(de\s+)?contrato\b(?!\s+(com|atualizado|reajuste|aditivo))/i },
     { pri: 3, re: /valor\s+total\s+(do\s+)?contrato\b(?!\s+(com|atualizado|reajuste|aditivo))/i },
     { pri: 4, re: /valor\s*(total\s*)?(do\s*)?contrato\s*(com\s*)?(atualizado|reajuste)/i },
     { pri: 5, re: /valor\s*ct\s*[\/\\]\s*ta/i },
-    { pri: 5, re: /valor\s*(de\s+)?contrato\s*(com\s*)?(aditivo|ta\b)/i },
+    { pri: 5, re: /valor\s*(de\s+)?contrato\s*(com\s*)?(aditivo|\bta\b)/i },
   ];
 
-  // Encontra a linha que contém "ITEM" — essa é a linha de cabeçalho dos dados
+  // ── 1. Localizar a linha de cabeçalho (onde aparece "ITEM") ──────────────
   let headerRowIdx = -1;
   let itemCol = -1;
-  for(let r = 0; r < Math.min(60, data.length); r++){
+
+  for(let r = 0; r < Math.min(80, data.length); r++){
     const row = data[r] || [];
-    for(let c = 0; c < Math.min(10, row.length); c++){
-      if(RE.item.test(norm(row[c]))){
+    for(let c = 0; c < Math.min(15, row.length); c++){
+      if(RE_ITEM.test(norm(row[c]))){
         headerRowIdx = r;
         itemCol = c;
         break;
@@ -148,8 +155,9 @@ function detectColumns(data){
     if(headerRowIdx >= 0) break;
   }
 
+  // Fallback: primeira linha com número inteiro nas primeiras colunas
   if(headerRowIdx < 0){
-    for(let r = 0; r < Math.min(60, data.length); r++){
+    for(let r = 0; r < Math.min(80, data.length); r++){
       const row = data[r] || [];
       for(let c = 0; c < Math.min(5, row.length); c++){
         if(/^\d+$/.test(String(row[c]??'').trim())){
@@ -163,14 +171,28 @@ function detectColumns(data){
   }
 
   const cols = { item: itemCol, desc:-1, vc:-1, med:-1, acum:-1, saldo:-1 };
-  let vcPri = -1; // prioridade atual do melhor match de vc
+  let vcPri = -1;
 
-  function applyRow(row){
+  if(headerRowIdx < 0) return cols;
+
+  // ── 2. Montar o bloco de header: até 4 linhas antes + a própria linha ────
+  //    Inclui apenas linhas que NÃO sejam linhas de dados (sem número em itemCol)
+  const blockStart = Math.max(0, headerRowIdx - 4);
+  const headerBlock = [];
+  for(let r = blockStart; r <= headerRowIdx; r++){
+    const row = data[r] || [];
+    // Pula linhas de dados (número inteiro na coluna item)
+    if(r < headerRowIdx && /^\d+$/.test(String(row[itemCol]??'').trim())) continue;
+    headerBlock.push(row);
+  }
+
+  // ── 3. Varrer o bloco para mapear colunas ────────────────────────────────
+  for(const row of headerBlock){
     for(let c = 0; c < row.length; c++){
       const t = norm(row[c]);
       if(!t || c === itemCol) continue;
 
-      // desc / med / acum / saldo: primeiro match vence
+      // desc / med / acum / saldo: primeiro match no bloco vence
       if(RE.desc.test(t)  && cols.desc  < 0) cols.desc  = c;
       if(RE.med.test(t)   && cols.med   < 0) cols.med   = c;
       if(RE.acum.test(t)  && cols.acum  < 0) cols.acum  = c;
@@ -180,42 +202,34 @@ function detectColumns(data){
       for(const {pri, re} of VC_PATTERNS){
         if(re.test(t)){
           if(pri >= vcPri){ cols.vc = c; vcPri = pri; }
-          break; // cada coluna é testada por ordem de pri, para no primeiro match
+          break;
         }
       }
     }
   }
 
-  if(headerRowIdx >= 0){
-    // Verifica linhas anteriores ao cabeçalho (multi-linha de header)
-    for(let r = Math.max(0, headerRowIdx - 3); r < headerRowIdx; r++){
-      applyRow(data[r] || []);
+  // ── 4. Fallback numérico para colunas ainda não encontradas ──────────────
+  const firstDataRow = data[headerRowIdx + 1] || [];
+  const missing = ['vc','med','acum','saldo'].filter(k => cols[k] < 0);
+  if(missing.length > 0){
+    const usedCols = new Set(Object.values(cols).filter(v => v >= 0));
+    const numCols = [];
+    for(let c = (itemCol >= 0 ? itemCol : 0) + 1; c < firstDataRow.length; c++){
+      if(!usedCols.has(c) && isNum(firstDataRow[c]) && Number(firstDataRow[c]) > 0)
+        numCols.push(c);
     }
-    // Linha principal do cabeçalho
-    applyRow(data[headerRowIdx] || []);
+    missing.forEach((k, i) => {
+      if(numCols[i] !== undefined) cols[k] = numCols[i];
+    });
+  }
 
-    // Fallback numérico
-    const firstDataRow = data[headerRowIdx + 1] || [];
-    const missing = ['vc','med','acum','saldo'].filter(k => cols[k] < 0);
-    if(missing.length > 0){
-      const usedCols = new Set(Object.values(cols).filter(v => v >= 0));
-      const numCols = [];
-      for(let c = (itemCol >= 0 ? itemCol : 0) + 1; c < firstDataRow.length; c++){
-        if(!usedCols.has(c) && isNum(firstDataRow[c]) && Number(firstDataRow[c]) > 0)
-          numCols.push(c);
-      }
-      missing.forEach((k, i) => {
-        if(numCols[i] !== undefined) cols[k] = numCols[i];
-      });
-    }
-
-    if(cols.desc < 0 && itemCol >= 0){
-      const fdr = data[headerRowIdx + 1] || [];
-      const vcLimit = cols.vc > 0 ? cols.vc : itemCol + 12;
-      for(let c = itemCol + 1; c < vcLimit; c++){
-        if(!isNum(fdr[c]) && String(fdr[c]??'').trim()){
-          cols.desc = c; break;
-        }
+  // ── 5. Fallback de descrição: primeira coluna de texto entre item e vc ───
+  if(cols.desc < 0 && itemCol >= 0){
+    const fdr = data[headerRowIdx + 1] || [];
+    const vcLimit = cols.vc > 0 ? cols.vc : itemCol + 12;
+    for(let c = itemCol + 1; c < vcLimit; c++){
+      if(!isNum(fdr[c]) && String(fdr[c]??'').trim()){
+        cols.desc = c; break;
       }
     }
   }
@@ -783,429 +797,4 @@ function setupNovaAtividade(){
     if(vc>0){ $('fSaldo').value=(vc-acu).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); $('fPct').value=(acu/vc*100).toFixed(2); }
     else { $('fSaldo').value=''; $('fPct').value=''; }
   };
-  ['fValorContrato','fMedicao','fAcumulado'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input',recalc); });
-  $('addRow').onclick=()=>{
-    const item=$('fItem').value.trim(), desc=$('fName').value.trim();
-    if(!item&&!desc){ showToast('⚠️ Preencha item ou descrição.',true); return; }
-    const vc=parseMoney($('fValorContrato').value), med=parseMoney($('fMedicao').value), acu=parseMoney($('fAcumulado').value);
-    const saldo=vc>0?vc-acu:0, p=vc>0?+(acu/vc*100).toFixed(2):0;
-    state.rows.push({item,descricao:desc,valorContrato:vc,medicao:med,acumulado:acu,saldo,percentualExecutado:p});
-    const o=currentObra(); if(o){ o.itens=state.rows; saveObra(o); }
-    renderAll();
-    $('fItem').value=''; $('fName').value=''; $('fValorContrato').value=''; $('fMedicao').value=''; $('fAcumulado').value=''; $('fSaldo').value=''; $('fPct').value='';
-    showToast('✅ Item adicionado.');
-  };
-}
-
-function bindEvents(){
-  $('loginForm').addEventListener('submit',async e=>{
-    e.preventDefault();
-    const email=$('loginEmail').value.trim(), senha=$('loginSenha').value, btn=$('loginBtn');
-    btn.disabled=true; btn.textContent='Entrando...'; $('loginError').style.display='none';
-    try{ await signInWithEmailAndPassword(auth,email,senha); }
-    catch{ $('loginError').textContent='E-mail ou senha inválidos.'; $('loginError').style.display='block'; }
-    finally{ btn.disabled=false; btn.textContent='Entrar'; }
-  });
-  $('logoutBtnAdmin').addEventListener('click',()=>{ cleanup(); signOut(auth); });
-  $('logoutBtnUser').addEventListener('click',()=>{ cleanup(); signOut(auth); });
-  $('toggleTheme').onclick=()=>{
-    document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';
-    if(state.rows.length) state.chartUser=renderCurvaS('sCurveChart','sCurveScrollWrap',state.rows,state.chartUser);
-  };
-  $('adminToggleColab').onclick=()=>{ const p=$('adminColabPanel'); p.style.display=p.style.display==='none'?'block':'none'; };
-  $('loadFile').onclick=()=>importFile(false);
-  $('addObraBtn').onclick=()=>importFile(false);
-  $('fillSample').onclick=()=>{
-    if(!confirm('Limpar todos os itens?')) return;
-    state.rows=[]; const o=currentObra(); if(o){ o.itens=[]; saveObra(o); } renderAll();
-  };
-  $('exportCsv').onclick=()=>{
-    const fields=['item','descricao','valorContrato','medicao','acumulado','saldo','percentualExecutado'];
-    const body=state.rows.map(r=>fields.map(k=>`"${String(r[k]??'').replace(/"/g,'""')}"`).join(',')).join('\n');
-    const blob=new Blob([fields.join(',')+' \n'+body],{type:'text/csv;charset=utf-8'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='cronograma.csv'; a.click(); URL.revokeObjectURL(a.href);
-  };
-  $('saveJson').onclick=()=>{
-    const o=currentObra(), name=$('projName').value.trim()||'projeto';
-    const blob=new Blob([JSON.stringify({obra:name,medicaoAtual:o?.medicaoAtual||'',itens:state.rows},null,2)],{type:'application/json;charset=utf-8'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name.replace(/[^a-zA-Z0-9\-_]/g,'-').toLowerCase()+'.json'; a.click(); URL.revokeObjectURL(a.href);
-  };
-  $('projContratada').addEventListener('input',()=>{
-    const o=currentObra(); if(!o) return;
-    o.contratada=$('projContratada').value.trim(); scheduleSave();
-  });
-  $('tbody').addEventListener('input',e=>{
-    const t=e.target, tr=t.closest('tr'); if(!tr) return;
-    const i=+tr.dataset.i, k=t.dataset.k; if(!k) return;
-    if(['valorContrato','medicao','acumulado','saldo','percentualExecutado'].includes(k))
-      state.rows[i][k]=Number(t.textContent.replace(',','.').replace(/[^\d.-]/g,''))||0;
-    else state.rows[i][k]=t.textContent.trim();
-    updateDashboard(); scheduleSave();
-  });
-  $('tbody').addEventListener('focusout',e=>{
-    const t=e.target, tr=t.closest('tr'); if(!tr) return;
-    const i=+tr.dataset.i, k=t.dataset.k;
-    if(k&&['valorContrato','medicao','acumulado','saldo'].includes(k)) t.textContent=money(state.rows[i][k]);
-    else if(k==='percentualExecutado') t.textContent=Number(state.rows[i][k]).toFixed(2);
-  });
-  $('tbody').addEventListener('click',e=>{
-    const b=e.target.closest('button[data-del]'); if(!b) return;
-    state.rows.splice(+b.dataset.del,1);
-    const o=currentObra(); if(o){ o.itens=state.rows; saveObra(o); }
-    renderAll();
-  });
-  window.addEventListener('scroll',()=>{ const b=$('btnTopo'); if(b) b.classList.toggle('visible',window.scrollY>200); });
-}
-
-window.adminSelectColab  =uid=>{ state.adminSelectedUid=uid; state.adminSelectedObraId=null; renderAdminSidebar(); renderAdminDetail(); };
-window.adminDeselectColab=()=>{ state.adminSelectedUid=null; state.adminSelectedObraId=null; renderAdminSidebar(); renderAdminDetail(); };
-window.adminSelectObra   =id=>{ state.adminSelectedObraId=id||null; renderAdminDetail(); };
-window.toggleBloqueio=async(uid,isBlocked)=>{
-  await updateDoc(doc(db,'users',uid),{blocked:!isBlocked});
-  state.allUsers[uid].blocked=!isBlocked;
-  renderColabList(); renderAdminSidebar();
-  if(state.adminSelectedUid===uid) renderAdminDetail();
-};
-window.removeColab=async uid=>{
-  if(!confirm('Remover colaborador?')) return;
-  await updateDoc(doc(db,'users',uid),{disabled:true});
-  delete state.allUsers[uid];
-  if(state.adminSubs[uid]){ state.adminSubs[uid](); delete state.adminSubs[uid]; }
-  if(state.adminSelectedUid===uid){ state.adminSelectedUid=null; state.adminSelectedObraId=null; }
-  renderAdminViews(); renderAdminDetail();
-  showToast('✅ Colaborador removido.');
-};
-
-async function init(){
-  bindEvents(); setupNovaAtividade();
-  onAuthStateChanged(auth,async user=>{
-    state.user=user;
-    if(!user){ showView('loginView'); return; }
-    const snap=await getDoc(doc(db,'users',user.uid));
-    if(!snap.exists()){ cleanup(); await signOut(auth); return; }
-    const data=snap.data();
-    state.admin=data.role==='admin';
-    if(data.disabled===true||data.blocked===true){ cleanup(); await signOut(auth); return; }
-    state.userName = data.nome || (user.email ? user.email.split('@')[0] : '');
-    const nameEl = $('userNameDisplay');
-    if(nameEl) nameEl.textContent = state.userName.toUpperCase();
-    if(state.admin){
-      showView('adminView'); setupAdminSubs();
-      if(!state.colabFormReady){ state.colabFormReady=true; setupColabForm(); }
-    } else {
-      showView('appView');
-      state.obras=[]; state.selectedObraId=null; state.rows=[];
-      listenUserObras();
-    }
-  });
-}
-init();
-</script>
-<style>
-:root{
-  --bg:#f7f9fc;--surface:#fff;--surface-hover:#f1f5f9;
-  --text:#0f172a;--text-muted:#64748b;
-  --border:rgba(15,23,42,.1);--border-focus:#6366f1;
-  --primary:#4f46e5;--primary-hover:#4338ca;
-  --success:#10b981;--danger:#ef4444;--warning:#f59e0b;
-  --radius-sm:.5rem;--radius-md:.75rem;--radius-lg:1rem;
-  --shadow-sm:0 1px 2px rgba(0,0,0,.05);
-  --shadow-md:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -1px rgba(0,0,0,.06);
-  --shadow-lg:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -2px rgba(0,0,0,.05);
-  --font:'Satoshi',system-ui,sans-serif;
-  --aside-w:270px;
-}
-[data-theme="dark"]{
-  --bg:#0f172a;--surface:#1e293b;--surface-hover:#334155;
-  --text:#f8fafc;--text-muted:#94a3b8;
-  --border:rgba(255,255,255,.1);--border-focus:#818cf8;
-  --primary:#6366f1;--primary-hover:#818cf8;
-}
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
-body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;transition:background .2s}
-.toast{position:fixed;bottom:5rem;left:50%;transform:translateX(-50%);background:#1e293b;color:#f8fafc;padding:.7rem 1.4rem;border-radius:var(--radius-md);font-size:.875rem;font-weight:600;box-shadow:var(--shadow-lg);z-index:9999;max-width:90vw;text-align:center;transition:opacity .4s}
-.toast-error{background:#7f1d1d;color:#fecaca}
-.login-wrapper{display:flex;min-height:100vh;align-items:center;justify-content:center;padding:1rem;background:linear-gradient(135deg,#f3e8ff,#eff6ff 45%,#ecfdf5)}
-[data-theme="dark"] .login-wrapper{background:linear-gradient(135deg,#1e1b4b,#172554 45%,#064e3b)}
-.login-card{background:var(--surface);width:100%;max-width:400px;padding:2.5rem;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);border:1px solid var(--border)}
-.brand-login{display:flex;flex-direction:column;align-items:center;gap:1rem;margin-bottom:2rem;text-align:center}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.625rem 1.25rem;border-radius:var(--radius-sm);font-weight:600;font-size:.875rem;font-family:inherit;cursor:pointer;transition:all .2s;border:1px solid transparent}
-.btn-primary{background:var(--primary);color:#fff;box-shadow:var(--shadow-sm)}
-.btn-primary:hover{background:var(--primary-hover)}
-.btn-sec{background:var(--surface);color:var(--text);border-color:var(--border)}
-.btn-danger{color:var(--danger);background:rgba(239,68,68,.1)}
-.btn-warning{color:#92400e;background:rgba(245,158,11,.12)}
-.btn-success{color:#065f46;background:rgba(16,185,129,.12)}
-
-/* ── Layout principal ── */
-.app-shell{display:grid;grid-template-columns:var(--aside-w) 1fr;grid-template-rows:auto 1fr;height:100vh;overflow:hidden}
-.app-topbar{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;padding:.875rem 2rem;background:var(--surface);border-bottom:1px solid var(--border);gap:.75rem;z-index:20}
-.app-aside{grid-column:1;grid-row:2;overflow-y:auto;background:var(--surface);border-right:1px solid var(--border);padding:1rem;display:flex;flex-direction:column;gap:.75rem}
-.app-main{grid-column:2;grid-row:2;overflow-y:auto;padding:1.5rem 2rem}
-.brand{display:flex;align-items:center;gap:1rem;min-width:0}
-.brand-text h1{font-size:1.25rem;font-weight:700;white-space:nowrap}
-.brand-text p{color:var(--text-muted);font-size:.8rem;white-space:nowrap}
-.header-actions{display:flex;gap:.5rem;align-items:center;flex-shrink:0}
-.user-chip{display:inline-flex;align-items:center;gap:.4rem;background:rgba(99,102,241,.1);color:var(--primary);border:1px solid rgba(99,102,241,.25);border-radius:999px;padding:.3rem .85rem;font-size:.875rem;font-weight:600}
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:1.5rem;box-shadow:var(--shadow-sm)}
-.panel+.panel{margin-top:1.25rem}
-.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem 1.25rem;display:flex;flex-direction:column;gap:.25rem;box-shadow:var(--shadow-sm)}
-.stat-card.compact{padding:.75rem 1rem}
-.stat-label{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
-.stat-value{font-size:1.5rem;font-weight:700;color:var(--text)}
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem}
-.admin-stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem;margin-bottom:1.5rem}
-.form-group{display:flex;flex-direction:column;gap:.35rem}
-.form-group label{font-size:.8rem;font-weight:600;color:var(--text-muted)}
-.form-control{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.5rem .75rem;font-size:.875rem;font-family:inherit;color:var(--text);width:100%;transition:border-color .15s}
-.form-control:focus{outline:none;border-color:var(--border-focus)}
-.table-container{overflow-x:auto;border-radius:var(--radius-sm);border:1px solid var(--border)}
-table{width:100%;border-collapse:collapse;font-size:.8rem}
-th,td{padding:.55rem .85rem;border-bottom:1px solid var(--border);white-space:nowrap}
-th{background:var(--bg);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);position:sticky;top:0;z-index:1}
-.th-sticky{position:sticky;top:0;background:var(--bg);z-index:1}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:var(--surface-hover)}
-.td-desc{max-width:260px;overflow:hidden;text-overflow:ellipsis}
-.chart-container{position:relative;height:220px}
-.chart-scroll-wrap{overflow-x:auto}
-.obra-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem 1.25rem;box-shadow:var(--shadow-sm);transition:box-shadow .2s}
-.obra-card:hover{box-shadow:var(--shadow-md)}
-.obra-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem}
-.obra-card-title{font-weight:700;font-size:.9rem}
-.obra-card-sub{font-size:.72rem;color:var(--text-muted);margin-top:.1rem}
-.obra-card-pct{font-size:1.1rem;font-weight:700;color:var(--primary)}
-.obra-progress-bar{height:6px;background:var(--border);border-radius:999px;margin:.5rem 0}
-.obra-progress-fill{height:100%;background:var(--primary);border-radius:999px;transition:width .4s}
-.obra-card-footer{display:flex;justify-content:space-between;font-size:.72rem;color:var(--text-muted);flex-wrap:wrap;gap:.25rem}
-.obras-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem}
-.admin-layout{display:grid;grid-template-columns:220px 1fr;gap:1.5rem;align-items:start}
-.colab-sidebar-item{padding:.6rem .75rem;border-radius:var(--radius-sm);cursor:pointer;transition:background .15s;border:1px solid transparent}
-.colab-sidebar-item:hover,.colab-sidebar-item.active{background:rgba(99,102,241,.08);border-color:rgba(99,102,241,.2)}
-.colab-item{display:flex;justify-content:space-between;align-items:center;gap:.75rem;padding:.75rem;border:1px solid var(--border);border-radius:var(--radius-sm);flex-wrap:wrap}
-.section-title{font-size:1rem;font-weight:700;margin-bottom:.75rem}
-.add-form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.75rem;align-items:end}
-.btnTopo{position:fixed;bottom:1.5rem;right:1.5rem;z-index:100;width:2.5rem;height:2.5rem;border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .3s;font-size:1.1rem;padding:0}
-.btnTopo.visible{opacity:1;pointer-events:all}
-
-/* ── Mobile: aside colapsável ── */
-@media(max-width:900px){
-  .app-shell{
-    grid-template-columns:1fr;
-    grid-template-rows:auto auto 1fr;
-    height:100vh;
-  }
-  .app-aside{
-    grid-column:1;grid-row:2;
-    border-right:none;border-bottom:1px solid var(--border);
-    padding:.75rem 1rem;
-    flex-direction:row;flex-wrap:wrap;gap:.5rem;
-    overflow-y:visible;overflow-x:auto;
-    max-height:none;
-  }
-  .app-aside .panel{flex:1 1 220px;min-width:200px;padding:.75rem}
-  .app-main{grid-column:1;grid-row:3;padding:1rem;overflow-y:auto}
-  .admin-layout{grid-template-columns:1fr}
-}
-@media(max-width:640px){
-  .app-topbar{padding:.65rem .875rem;flex-wrap:wrap;gap:.5rem}
-  .brand-text h1{font-size:.95rem}
-  .brand-text p{display:none}
-  .user-chip{font-size:.75rem;padding:.25rem .6rem}
-  .app-aside{flex-direction:column;gap:.5rem;padding:.75rem}
-  .app-aside .panel{flex:none;width:100%}
-  .app-main{padding:.75rem}
-  .stats-grid{grid-template-columns:repeat(2,1fr);gap:.6rem;margin-bottom:1rem}
-  .stat-value{font-size:1.1rem}
-  .stat-label{font-size:.65rem}
-  .panel{padding:1rem}
-  .add-form-grid{grid-template-columns:1fr 1fr;gap:.5rem}
-  th,td{padding:.4rem .6rem;font-size:.72rem}
-  .td-desc{max-width:120px}
-  .chart-container{height:160px}
-  .btnTopo{bottom:1rem;right:.75rem}
-}
-</style>
-</head>
-<body>
-
-<!-- ═══════════════════════════════════════ LOGIN ═══════════════════════════════════════ -->
-<div id="loginView" style="display:flex">
-  <div class="login-wrapper" style="width:100%">
-    <div class="login-card">
-      <div class="brand-login">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-          <rect width="48" height="48" rx="12" fill="#4f46e5"/>
-          <path d="M14 34V18l10-6 10 6v16" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
-          <rect x="20" y="24" width="8" height="10" rx="1.5" fill="#fff"/>
-        </svg>
-        <div>
-          <h2 style="font-size:1.5rem;font-weight:800">Cronograma PRO</h2>
-          <p style="color:var(--text-muted);font-size:.875rem">Gestão de obras e medições</p>
-        </div>
-      </div>
-      <form id="loginForm" style="display:flex;flex-direction:column;gap:1rem">
-        <div class="form-group">
-          <label for="loginEmail">E-mail</label>
-          <input id="loginEmail" type="email" class="form-control" placeholder="seu@email.com" required autocomplete="email"/>
-        </div>
-        <div class="form-group">
-          <label for="loginSenha">Senha</label>
-          <input id="loginSenha" type="password" class="form-control" placeholder="••••••••" required autocomplete="current-password"/>
-        </div>
-        <div id="loginError" style="display:none;color:var(--danger);font-size:.8rem;background:rgba(239,68,68,.08);padding:.6rem .875rem;border-radius:var(--radius-sm)"></div>
-        <button id="loginBtn" type="submit" class="btn btn-primary" style="width:100%;margin-top:.25rem">Entrar</button>
-      </form>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════ APP USER ══════════════════════════════════════ -->
-<div id="appView" style="display:none">
-  <div class="app-shell">
-    <header class="app-topbar">
-      <div class="brand">
-        <svg width="36" height="36" viewBox="0 0 48 48" fill="none">
-          <rect width="48" height="48" rx="10" fill="#4f46e5"/>
-          <path d="M14 34V18l10-6 10 6v16" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
-          <rect x="20" y="24" width="8" height="10" rx="1.5" fill="#fff"/>
-        </svg>
-        <div class="brand-text"><h1>Cronograma PRO</h1><p>Gestão de Obras</p></div>
-      </div>
-      <div class="header-actions">
-        <span class="user-chip">👤 <span id="userNameDisplay">—</span></span>
-        <button id="toggleTheme" class="btn btn-sec" style="padding:.5rem .75rem">🌙</button>
-        <button id="logoutBtnUser" class="btn btn-sec" style="padding:.5rem .75rem">Sair</button>
-      </div>
-    </header>
-
-    <aside class="app-aside">
-      <div class="panel" style="padding:1rem">
-        <div class="section-title" style="margin-bottom:.75rem">📁 Obras</div>
-        <div id="obrasBox"></div>
-        <button id="addObraBtn" class="btn btn-primary" style="width:100%;margin-top:.75rem">＋ Nova Obra</button>
-      </div>
-      <div class="panel" style="padding:1rem">
-        <div class="section-title">🏗️ Projeto</div>
-        <div style="display:flex;flex-direction:column;gap:.6rem;margin-top:.5rem">
-          <div class="form-group"><label>Nome do projeto</label><input id="projName" class="form-control" placeholder="Nome da obra"/></div>
-          <div class="form-group"><label>Contratada</label><input id="projContratada" class="form-control" placeholder="Empresa executora"/></div>
-          <div class="form-group"><label>Medição atual</label><input id="projScope" class="form-control" readonly style="background:var(--bg)"/></div>
-        </div>
-      </div>
-      <div class="panel" style="padding:1rem">
-        <div class="section-title">🔧 Ações</div>
-        <div style="display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem">
-          <button id="loadFile" class="btn btn-sec" style="width:100%">📂 Importar Excel / JSON</button>
-          <button id="exportCsv" class="btn btn-sec" style="width:100%">⬇️ Exportar CSV</button>
-          <button id="saveJson" class="btn btn-sec" style="width:100%">💾 Salvar JSON</button>
-          <button id="fillSample" class="btn btn-danger" style="width:100%">🗑 Limpar itens</button>
-        </div>
-      </div>
-    </aside>
-
-    <main class="app-main">
-      <div class="stats-grid" id="stats"></div>
-
-      <div class="panel" style="margin-bottom:1.25rem">
-        <h3 style="margin-bottom:1rem">Curva S — Progresso Físico</h3>
-        <div class="chart-scroll-wrap" id="sCurveScrollWrap">
-          <div class="chart-container"><canvas id="sCurveChart"></canvas></div>
-        </div>
-      </div>
-
-      <div class="panel" style="margin-bottom:1.25rem">
-        <h3 style="margin-bottom:1rem">➕ Nova atividade</h3>
-        <div class="add-form-grid">
-          <div class="form-group"><label>Item</label><input id="fItem" class="form-control" placeholder="ex: 1"/></div>
-          <div class="form-group" style="grid-column:span 2"><label>Descrição</label><input id="fName" class="form-control" placeholder="Descrição do serviço"/></div>
-          <div class="form-group"><label>Valor Contrato</label><input id="fValorContrato" class="form-control" placeholder="0,00"/></div>
-          <div class="form-group"><label>Medição</label><input id="fMedicao" class="form-control" placeholder="0,00"/></div>
-          <div class="form-group"><label>Acumulado</label><input id="fAcumulado" class="form-control" placeholder="0,00"/></div>
-          <div class="form-group"><label>Saldo</label><input id="fSaldo" class="form-control" readonly style="background:var(--bg)"/></div>
-          <div class="form-group"><label>% Exec.</label><input id="fPct" class="form-control" readonly style="background:var(--bg)"/></div>
-          <div class="form-group" style="justify-content:flex-end"><button id="addRow" class="btn btn-primary" style="width:100%">Adicionar</button></div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <h3 style="margin-bottom:1rem">📋 Índice de Itens</h3>
-        <div class="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th>Descrição</th>
-                <th style="text-align:right">Valor Contrato</th>
-                <th style="text-align:right">Medição</th>
-                <th style="text-align:right">Acumulado</th>
-                <th style="text-align:right">Saldo</th>
-                <th style="text-align:right">% Exec.</th>
-                <th style="text-align:right">Ação</th>
-              </tr>
-            </thead>
-            <tbody id="tbody"></tbody>
-          </table>
-        </div>
-      </div>
-    </main>
-  </div>
-  <button id="btnTopo" class="btn btn-primary btnTopo" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
-</div>
-
-<!-- ══════════════════════════════════════ ADMIN ══════════════════════════════════════ -->
-<div id="adminView" style="display:none">
-  <div class="app-shell">
-    <header class="app-topbar">
-      <div class="brand">
-        <svg width="36" height="36" viewBox="0 0 48 48" fill="none">
-          <rect width="48" height="48" rx="10" fill="#4f46e5"/>
-          <path d="M14 34V18l10-6 10 6v16" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
-          <rect x="20" y="24" width="8" height="10" rx="1.5" fill="#fff"/>
-        </svg>
-        <div class="brand-text"><h1>Cronograma PRO</h1><p>Painel Administrativo</p></div>
-      </div>
-      <div class="header-actions">
-        <button id="adminToggleColab" class="btn btn-sec">👥 Colaboradores</button>
-        <button id="toggleTheme" class="btn btn-sec" style="padding:.5rem .75rem;display:none">🌙</button>
-        <button id="logoutBtnAdmin" class="btn btn-sec" style="padding:.5rem .75rem">Sair</button>
-      </div>
-    </header>
-
-    <aside class="app-aside">
-      <div class="section-title" style="padding:.25rem .5rem">👥 Colaboradores</div>
-      <div id="adminColabSidebar"></div>
-    </aside>
-
-    <main class="app-main">
-      <div class="stats-grid" id="adminStats" style="margin-bottom:1.5rem"></div>
-
-      <div id="adminDetailPanel">
-        <p style="color:var(--text-muted);padding:1rem">Selecione um colaborador ao lado.</p>
-      </div>
-
-      <!-- Painel de gerenciamento de colaboradores -->
-      <div id="adminColabPanel" style="display:none;margin-top:1.5rem">
-        <div class="panel">
-          <h3 style="margin-bottom:1.25rem">Cadastrar novo colaborador</h3>
-          <form id="addColabForm" style="display:flex;flex-direction:column;gap:.875rem;max-width:400px">
-            <div class="form-group"><label>Nome</label><input id="colabNome" class="form-control" placeholder="Nome completo" required/></div>
-            <div class="form-group"><label>E-mail</label><input id="colabEmail" class="form-control" type="email" placeholder="email@exemplo.com" required/></div>
-            <div class="form-group"><label>Senha inicial</label><input id="colabSenha" class="form-control" type="password" placeholder="Mínimo 6 caracteres" required minlength="6"/></div>
-            <div id="colabMsgError" style="display:none;color:var(--danger);font-size:.8rem;background:rgba(239,68,68,.08);padding:.5rem .75rem;border-radius:var(--radius-sm)"></div>
-            <button id="addColabBtn" type="submit" class="btn btn-primary" style="align-self:flex-start">Cadastrar colaborador</button>
-          </form>
-        </div>
-
-        <div class="panel" style="margin-top:1.25rem">
-          <h3 style="margin-bottom:1rem">Colaboradores cadastrados</h3>
-          <div id="colabList" style="display:flex;flex-direction:column;gap:.5rem"></div>
-        </div>
-      </div>
-    </main>
-  </div>
-</div>
-
-</body>
-</html>
+  ['fValorContrato','fMedicao','fAcumulado'].forEach(id=>{ const el=$(id); if(el) el
