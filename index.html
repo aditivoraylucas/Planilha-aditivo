@@ -81,9 +81,8 @@ function scheduleSave(){
   state.saveTimer = setTimeout(async()=>{ const o=currentObra(); if(o){ o.itens=state.rows; await saveObra(o); } }, 1200);
 }
 
-/* ─── EXCEL READER (v4) ─── */
+/* ─── EXCEL READER (v5) ─── */
 function detectSheet(wb){
-  // Prefere BM/MED com maior número, senão última aba
   const matches = wb.SheetNames.filter(n => /^(BM|MED)\s*\d+/i.test(n));
   if(matches.length){
     return matches.sort((a,b)=>{
@@ -95,34 +94,53 @@ function detectSheet(wb){
   return wb.SheetNames.at(-1);
 }
 
-function detectColumns(data){
+/*
+  ESTRATÉGIA v5:
+  Varre TODAS as linhas de cabeçalho (antes da 1ª linha de dados) célula a célula.
+  Para cada campo procurado, registra a ÚLTIMA coluna encontrada — assim
+  "Valor Total do Contrato Atualizado Reajuste 2" vence sobre "Reajuste 1",
+  e "Acumulado" da seção MEDIÇÃO (mais à direita) vence sobre outros "Acumulado".
+  O mesmo vale para "No período / Medição".
+  Colunas de Saldo e % Executado também são pegas pelo último match.
+*/
+function detectColumns(headerRows){
   const RE = {
-    desc:  /discrimina|descri[çc]|servico|servi[çc]/,
-    vc:    /valor.{0,30}contrato|total.{0,30}contrato|contrato.{0,30}valor/,
-    med:   /no\.?\s*per[ií]odo|no\.?\s*m[eê]s|^medic[aã]o$|^realizado$|per[ií]odo/,
+    desc:  /discrimina|descri[çc]ao|servic[oa]|servi[çc]/,
+    item:  /^(item|n[°º\.])$/,
+    // Valor Total do Contrato (com ou sem reajuste) — pegamos a última ocorrência
+    vc:    /valor\s*total\s*(do\s*)?(contrato|ct)|(total\s*(do\s*)?contrato)/,
+    // Medição "No período" ou "No mês"
+    med:   /no[\s.]*(per[ií]odo|mes|m[eê]s)|^medic[aã]o$|^realizado$|periodo/,
+    // Acumulado — pegamos a última (que será da seção MEDIÇÃO)
     acum:  /acumulado/,
-    saldo: /^saldo$/
+    // Saldo — última ocorrência
+    saldo: /^saldo$/,
+    // % executado
+    pct:   /%\s*(exec|realiz)|executad[ao]|percentual/
   };
-  let cols = {desc:-1, vc:-1, med:-1, acum:-1, saldo:-1};
-  for(const row of data){
+
+  // cols guarda SEMPRE a ÚLTIMA coluna encontrada para cada campo
+  let cols = { desc:-1, item:-1, vc:-1, med:-1, acum:-1, saldo:-1, pct:-1 };
+
+  for(const row of headerRows){
     for(let c=0; c<row.length; c++){
       const t = norm(row[c]); if(!t) continue;
-      if(cols.desc  < 0 && RE.desc.test(t))  cols.desc  = c;
-      if(cols.vc    < 0 && RE.vc.test(t))    cols.vc    = c;
-      if(cols.med   < 0 && RE.med.test(t))   cols.med   = c;
-      if(cols.acum  < 0 && RE.acum.test(t))  cols.acum  = c;
-      if(cols.saldo < 0 && RE.saldo.test(t)) cols.saldo = c;
+      if(RE.desc.test(t))  cols.desc  = c;   // última desc
+      if(RE.item.test(t))  cols.item  = c;
+      if(RE.vc.test(t))    cols.vc    = c;   // última = maior reajuste
+      if(RE.med.test(t))   cols.med   = c;   // última = seção MEDIÇÃO
+      if(RE.acum.test(t))  cols.acum  = c;   // última = seção MEDIÇÃO
+      if(RE.saldo.test(t)) cols.saldo = c;   // último saldo
+      if(RE.pct.test(t))   cols.pct   = c;
     }
-    // Para quando encontrou tudo ou chegou na primeira linha de dados
-    if(cols.vc >= 0 && cols.acum >= 0) break;
   }
   return cols;
 }
 
 function fallbackColumns(firstDataRow, cols){
-  // Quando colunas numéricas não foram detectadas, infere pela posição
   const nums = [];
-  for(let c=1; c<firstDataRow.length; c++) if(isNum(firstDataRow[c]) && Number(firstDataRow[c]) > 0) nums.push(c);
+  for(let c=1; c<firstDataRow.length; c++)
+    if(isNum(firstDataRow[c]) && Number(firstDataRow[c]) > 0) nums.push(c);
   if(!nums.length) return cols;
   if(cols.vc    < 0) cols.vc    = nums[0] ?? -1;
   if(cols.med   < 0) cols.med   = nums[1] ?? -1;
@@ -131,21 +149,20 @@ function fallbackColumns(firstDataRow, cols){
   return cols;
 }
 
-function extractResumoFromHeaders(data, firstDataRow){
-  // Busca Valor Contrato/Aditivo e Acumulado total nas linhas de cabeçalho
+function extractResumoFromHeaders(data, firstDataRowIdx){
   const RE_VCA  = /valor\s*(ct|contrato)\s*[\/\-]?\s*(ta|aditiv|reajust|atualiz)?/i;
   const RE_ACUM = /^acumulado$/i;
   let vca = 0, acu = 0;
-  const rows = firstDataRow < 0 ? data : data.slice(0, firstDataRow);
+  const rows = firstDataRowIdx < 0 ? data : data.slice(0, firstDataRowIdx);
   for(const row of rows){
     for(let c=0; c<row.length; c++){
       const cell = String(row[c]??'').trim();
-      if(!vca && RE_VCA.test(cell)){
+      if(RE_VCA.test(cell)){
         for(let cc=c+1; cc<Math.min(c+12,row.length); cc++){
           const v = Number(row[cc]); if(v > 5000){ vca = v; break; }
         }
       }
-      if(!acu && RE_ACUM.test(cell)){
+      if(RE_ACUM.test(cell)){
         for(let cc=c+1; cc<Math.min(c+6,row.length); cc++){
           const v = Number(row[cc]); if(v > 0){ acu = v; break; }
         }
@@ -153,6 +170,20 @@ function extractResumoFromHeaders(data, firstDataRow){
     }
   }
   return { valorContratoAditivo: vca, acumuladoTotal: acu };
+}
+
+/*
+  Detecta em qual coluna ficam os itens (números inteiros como 1, 2, 3…).
+  Normalmente é a col 0 ou col 1 (planilhas com logo/brasão na col A).
+*/
+function detectItemCol(data, startSearch = 0){
+  for(let r = startSearch; r < Math.min(startSearch + 30, data.length); r++){
+    const row = data[r] || [];
+    for(let c = 0; c < Math.min(5, row.length); c++){
+      if(/^\d+$/.test(String(row[c]??'').trim())) return c;
+    }
+  }
+  return 0;
 }
 
 async function readExcelFile(file){
@@ -165,38 +196,47 @@ async function readExcelFile(file){
   const data = XLSX.utils.sheet_to_json(ws, { header:1, defval:'', raw:true });
   if(!data.length) throw new Error(`A aba "${sheetName}" está vazia.`);
 
-  // Encontra primeira linha de dados (começa com número inteiro na col 0)
+  // Descobre a coluna dos itens (pode ser col B em planilhas com brasão na col A)
+  const itemCol = detectItemCol(data);
+
+  // Primeira linha de dados: primeira linha onde itemCol tem número inteiro
   let firstDataRowIdx = -1;
   for(let r=0; r<data.length; r++){
-    if(/^\d+$/.test(String(data[r][0]??'').trim())){ firstDataRowIdx = r; break; }
+    if(/^\d+$/.test(String(data[r][itemCol]??'').trim())){ firstDataRowIdx = r; break; }
   }
 
-  // Detecta colunas nas linhas de cabeçalho
-  const headerData = firstDataRowIdx > 0 ? data.slice(0, firstDataRowIdx) : data.slice(0, Math.min(20, data.length));
-  let cols = detectColumns(headerData);
+  // Linhas de cabeçalho = tudo antes da 1ª linha de dados
+  const headerRows = firstDataRowIdx > 0
+    ? data.slice(0, firstDataRowIdx)
+    : data.slice(0, Math.min(25, data.length));
 
-  // Fallback: infere pelas primeiras colunas numéricas da primeira linha de dados
+  // Detecta colunas varrendo TODO o cabeçalho (pega a última ocorrência de cada campo)
+  let cols = detectColumns(headerRows);
+
+  // Se col de descrição não foi achada, tenta a primeira célula de texto após itemCol
+  // (será resolvido item a item abaixo)
+
+  // Fallback numérico se colunas críticas ainda faltam
   if(firstDataRowIdx >= 0 && (cols.vc < 0 || cols.acum < 0)){
     cols = fallbackColumns(data[firstDataRowIdx] || [], cols);
   }
 
-  // Extrai resumo do cabeçalho
   const resumoHeader = extractResumoFromHeaders(data, firstDataRowIdx);
 
   // Lê os itens
   const items = [];
-  let warnings = [];
+  const warnings = [];
   for(let r=0; r<data.length; r++){
     const row = data[r] || [];
-    const itemStr = String(row[0]??'').trim();
+    const itemStr = String(row[itemCol]??'').trim();
     if(!/^\d+$/.test(itemStr)) continue;
 
-    // Descrição: tenta coluna detectada, depois primeira célula de texto antes da coluna de valores
+    // Descrição: coluna detectada, ou primeira célula de texto entre itemCol+1 e vc
     let descricao = '';
     if(cols.desc >= 0) descricao = String(row[cols.desc]??'').trim();
     if(!descricao){
-      const lim = cols.vc > 0 ? cols.vc : 10;
-      for(let c=1; c<lim; c++){
+      const lim = cols.vc > 0 ? cols.vc : itemCol + 10;
+      for(let c = itemCol+1; c < lim; c++){
         const v = String(row[c]??'').trim();
         if(v && !isNum(row[c])){ descricao = v; break; }
       }
@@ -207,7 +247,9 @@ async function readExcelFile(file){
     const acum = cols.acum  >= 0 ? (Number(row[cols.acum])  || 0) : 0;
     let saldo  = cols.saldo >= 0 ? (Number(row[cols.saldo]) || 0) : 0;
     if(!saldo && vc > 0) saldo = vc - acum;
-    const p = vc > 0 ? +(acum/vc*100).toFixed(2) : 0;
+    // % executado: usa coluna detectada, senão calcula
+    let p = cols.pct >= 0 ? (Number(row[cols.pct]) || 0) : 0;
+    if(!p && vc > 0) p = +(acum/vc*100).toFixed(2);
 
     if(!descricao) warnings.push(`Item ${itemStr}: descrição não encontrada`);
     if(!vc && !acum) warnings.push(`Item ${itemStr}: valores zerados — verifique a aba "${sheetName}"`);
@@ -219,14 +261,14 @@ async function readExcelFile(file){
       medicao:       +med.toFixed(2),
       acumulado:     +acum.toFixed(2),
       saldo:         +saldo.toFixed(2),
-      percentualExecutado: p
+      percentualExecutado: +p.toFixed(2)
     });
   }
 
   if(!items.length){
     throw new Error(
       `Nenhum item numérico encontrado na aba "${sheetName}".\n` +
-      `Verifique se a coluna A contém números inteiros (1, 2, 3...) para cada item.`
+      `Verifique se a coluna com os números dos itens (1, 2, 3…) está nas primeiras 5 colunas.`
     );
   }
 
@@ -281,7 +323,6 @@ async function importFile(replace = false){
           const preview = obj.warnings.slice(0,5).join('\n');
           const extra   = obj.warnings.length > 5 ? `\n...e mais ${obj.warnings.length-5} aviso(s).` : '';
           console.warn('[Importação] Avisos:\n' + preview + extra);
-          // Só bloqueia se não tiver nenhum item válido
         }
       } else {
         const text = await file.text();
@@ -627,7 +668,7 @@ function setupColabForm(){
   });
 }
 
-/* ─── NOVA ATIVIDADE RECALC ─── */
+/* ─── NOVA ATIVIDADE ─── */
 function setupNovaAtividade(){
   const recalc = () => {
     const vc  = parseMoney($('fValorContrato').value);
@@ -637,7 +678,7 @@ function setupNovaAtividade(){
       $('fPct').value   = (acu/vc*100).toFixed(2);
     } else { $('fSaldo').value=''; $('fPct').value=''; }
   };
-  ['fValorContrato','fMedicao','fAcumulado'].forEach(id=>{ const el=$( id); if(el) el.addEventListener('input', recalc); });
+  ['fValorContrato','fMedicao','fAcumulado'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input', recalc); });
   $('addRow').onclick = () => {
     const item = $('fItem').value.trim();
     const desc = $('fName').value.trim();
@@ -657,7 +698,6 @@ function setupNovaAtividade(){
 
 /* ─── BIND EVENTS ─── */
 function bindEvents(){
-  // Login
   $('loginForm').addEventListener('submit', async e => {
     e.preventDefault();
     const email = $('loginEmail').value.trim();
@@ -668,37 +708,25 @@ function bindEvents(){
     catch{ $('loginError').textContent='E-mail ou senha inválidos.'; $('loginError').style.display='block'; }
     finally{ btn.disabled=false; btn.textContent='Entrar'; }
   });
-
-  // Logout
   $('logoutBtnAdmin').addEventListener('click', ()=>{ cleanup(); signOut(auth); });
   $('logoutBtnUser').addEventListener('click',  ()=>{ cleanup(); signOut(auth); });
-
-  // Theme toggle
   $('toggleTheme').onclick = () => {
     document.documentElement.dataset.theme = document.documentElement.dataset.theme==='dark' ? 'light' : 'dark';
     if(state.rows.length) state.chartUser = renderCurvaS('sCurveChart','sCurveScrollWrap',state.rows,state.chartUser);
   };
-
-  // Admin colab panel
   $('adminToggleColab').onclick = () => { const p=$('adminColabPanel'); p.style.display=p.style.display==='none'?'block':'none'; };
-
-  // File actions
   $('loadFile').onclick  = ()=>importFile(false);
   $('addObraBtn').onclick = ()=>importFile(false);
   $('fillSample').onclick = ()=>{
     if(!confirm('Limpar todos os itens da obra atual?')) return;
     state.rows=[]; const o=currentObra(); if(o){ o.itens=[]; saveObra(o); } renderAll();
   };
-
-  // Export CSV
   $('exportCsv').onclick = () => {
     const fields = ['item','descricao','valorContrato','medicao','acumulado','saldo','percentualExecutado'];
     const body   = state.rows.map(r=>fields.map(k=>`"${String(r[k]??'').replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob   = new Blob([fields.join(',')+'\n'+body],{type:'text/csv;charset=utf-8'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='cronograma.csv'; a.click(); URL.revokeObjectURL(a.href);
   };
-
-  // Export JSON
   $('saveJson').onclick = () => {
     const o    = currentObra();
     const name = ($('projName').value.trim()||'projeto');
@@ -706,8 +734,6 @@ function bindEvents(){
     const blob  = new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name.replace(/[^a-zA-Z0-9\-_]/g,'-').toLowerCase()+'.json'; a.click(); URL.revokeObjectURL(a.href);
   };
-
-  // Table edit
   $('tbody').addEventListener('input', e => {
     const t=e.target, tr=t.closest('tr'); if(!tr) return;
     const i=+tr.dataset.i, k=t.dataset.k; if(!k) return;
@@ -728,8 +754,6 @@ function bindEvents(){
     const o=currentObra(); if(o){ o.itens=state.rows; saveObra(o); }
     renderAll();
   });
-
-  // Back to top
   window.addEventListener('scroll',()=>{ const b=$('btnTopo'); if(b) b.classList.toggle('visible', window.scrollY>200); });
 }
 
