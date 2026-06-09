@@ -52,7 +52,10 @@ export function applySelected(o){
 
 export function renderTable(){
   const tbody=$('tbody'); if(!tbody) return;
-  tbody.innerHTML=state.rows.map((r,i)=>`
+  tbody.innerHTML=state.rows.map((r,i)=>{
+    const p=Number(r.percentualExecutado||0);
+    const pctColor=p>=99.95?'color:var(--success);font-weight:700':'font-weight:700';
+    return `
     <tr data-i="${i}">
       <td contenteditable="true" data-k="item">${esc(r.item)}</td>
       <td contenteditable="true" data-k="descricao" class="td-desc">${esc(r.descricao)}</td>
@@ -60,9 +63,10 @@ export function renderTable(){
       <td contenteditable="true" data-k="medicao" style="text-align:right">${money(r.medicao)}</td>
       <td contenteditable="true" data-k="acumulado" style="text-align:right">${money(r.acumulado)}</td>
       <td contenteditable="true" data-k="saldo" style="text-align:right">${money(r.saldo)}</td>
-      <td contenteditable="true" data-k="percentualExecutado" style="text-align:right;font-weight:700">${Number(r.percentualExecutado||0).toFixed(2)}</td>
+      <td contenteditable="true" data-k="percentualExecutado" style="text-align:right;${pctColor}">${p.toFixed(2)}</td>
       <td style="text-align:right"><button data-del="${i}" class="btn btn-danger" style="padding:.4rem;border-radius:6px">🗑</button></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 export function updateDashboard(){
@@ -156,7 +160,6 @@ export function renderColabList(){
      </div>`).join('');
 }
 
-/* Gera o HTML dos itens da lista de colaboradores (reutilizado na sidebar e no mobile) */
 function colabSidebarHTML(colabs){
   if(!colabs.length) return '<p style="color:var(--text-muted);font-size:.8rem;padding:.5rem">Nenhum colaborador.</p>';
   if(state.adminSelectedUid && state.allUsers[state.adminSelectedUid]){
@@ -177,9 +180,7 @@ function colabSidebarHTML(colabs){
 export function renderAdminSidebar(){
   const colabs=Object.entries(state.allUsers).filter(([,u])=>u.role!=='admin');
   const html=colabSidebarHTML(colabs);
-  /* sidebar desktop */
   const box=$('adminColabSidebar'); if(box) box.innerHTML=html;
-  /* lista mobile (abaixo dos cards) */
   const mob=$('adminColabSidebarMobile'); if(mob) mob.innerHTML=html;
 }
 
@@ -242,21 +243,26 @@ export function renderAdminDetail(){
        <h3 style="margin-bottom:1rem">Índice de Itens</h3>
        <div class="table-container"><table>
          <thead><tr>
-           <th class="th-sticky">Item</th><th class="th-sticky">Descrição</th>
-           <th class="th-sticky" style="text-align:right">Valor Contrato</th>
-           <th class="th-sticky" style="text-align:right">Medição</th>
-           <th class="th-sticky" style="text-align:right">Acumulado</th>
-           <th class="th-sticky" style="text-align:right">Saldo</th>
-           <th class="th-sticky" style="text-align:right">% Exec.</th>
+           <th class="th-sticky" data-label="ITEM" data-full="Item"></th>
+           <th class="th-sticky" data-label="DESCRIÇÃO" data-full="Descrição"></th>
+           <th class="th-sticky" style="text-align:right" data-label="VALOR CT" data-full="Valor Contrato"></th>
+           <th class="th-sticky" style="text-align:right" data-label="MED" data-full="Medição"></th>
+           <th class="th-sticky" style="text-align:right" data-label="ACUMUL" data-full="Acumulado"></th>
+           <th class="th-sticky" style="text-align:right" data-label="SALDO" data-full="Saldo"></th>
+           <th class="th-sticky" style="text-align:right" data-label="%" data-full="% Exec."></th>
          </tr></thead>
-         <tbody>${it.map(r=>`<tr>
+         <tbody>${it.map(r=>{
+           const rp=Number(r.percentualExecutado||0);
+           const rpc=rp>=99.95?'color:var(--success);font-weight:700':'font-weight:700';
+           return `<tr>
            <td>${esc(r.item)}</td><td class="td-desc">${esc(r.descricao)}</td>
            <td style="text-align:right">${money(r.valorContrato)}</td>
            <td style="text-align:right">${money(r.medicao)}</td>
            <td style="text-align:right">${money(r.acumulado)}</td>
            <td style="text-align:right">${money(r.saldo)}</td>
-           <td style="text-align:right;font-weight:700;color:${Number(r.percentualExecutado)>=99.5?'var(--success)':'var(--text)'}">${Number(r.percentualExecutado||0).toFixed(2)}%</td>
-         </tr>`).join('')}</tbody>
+           <td style="text-align:right;${rpc}">${rp.toFixed(2)}%</td>
+         </tr>`;
+         }).join('')}</tbody>
        </table></div>
      </div>`;
   panel.innerHTML=html;

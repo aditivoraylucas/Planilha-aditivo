@@ -91,7 +91,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
   margin-bottom:1.5rem;
 }
 
-/* Painel de colaboradores no mobile (abaixo dos 4 cards) — oculto no desktop */
+/* Painel de colaboradores no mobile — oculto no desktop */
 .admin-colab-mobile-panel{
   display:none;
 }
@@ -107,6 +107,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
 table{width:100%;border-collapse:collapse;font-size:.8rem}
 th,td{padding:.55rem .85rem;border-bottom:1px solid var(--border);white-space:nowrap}
 th{background:var(--bg);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);position:sticky;top:0;z-index:1}
+/* Texto completo dos th — só aparece no desktop (padrão) */
+th[data-label]::before{ content: attr(data-full); }
+th[data-label]{ white-space:nowrap; }
 .th-sticky{position:sticky;top:0;background:var(--bg);z-index:1}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--surface-hover)}
@@ -165,7 +168,7 @@ table td:first-child{
 .proj-banner-item .val{font-size:.9rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
 .proj-banner-sep{width:1px;height:2rem;background:var(--border);flex-shrink:0}
 
-/* ════════════════════════════════════════ MOBILE (<=900px) ════════════════════════════════════════ */
+/* ══════════════════════════════════════ MOBILE (<=900px) ══════════════════════════════════════ */
 @media(max-width:900px){
   html{ font-size:85%; }
   .app-shell{
@@ -200,7 +203,6 @@ table td:first-child{
     overflow:visible;
     padding:.75rem;
   }
-  /* Lista de colaboradores aparece direto na main do admin no mobile */
   .admin-colab-mobile-panel{
     display:block;
     background:var(--surface);
@@ -281,6 +283,9 @@ table td:first-child{
   .proj-banner{gap:.5rem;padding:.6rem .75rem;}
   .proj-banner-sep{display:none;}
   .proj-banner-item .val{max-width:100%;}
+
+  /* Cabeçalhos abreviados no mobile — regra inquebrável */
+  th[data-label]::before{ content: attr(data-label) !important; }
 }
 
 @media(max-width:400px){

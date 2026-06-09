@@ -18,8 +18,6 @@
   <div class="login-wrapper" style="width:100%">
     <div class="login-card">
       <div class="brand-login">
-
-        <!-- LOGO LOGIN (grande, 64px) -->
         <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="bgL" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
@@ -31,24 +29,15 @@
               <stop offset="100%" stop-color="#d97706"/>
             </linearGradient>
           </defs>
-          <!-- fundo grafite -->
           <rect width="64" height="64" rx="16" fill="url(#bgL)"/>
-          <!-- andaime: barras verticais -->
           <line x1="14" y1="10" x2="14" y2="54" stroke="rgba(251,191,36,0.22)" stroke-width="2" stroke-linecap="round"/>
           <line x1="50" y1="10" x2="50" y2="54" stroke="rgba(251,191,36,0.22)" stroke-width="2" stroke-linecap="round"/>
-          <!-- andaime: barras horizontais -->
           <line x1="10" y1="18" x2="54" y2="18" stroke="rgba(251,191,36,0.18)" stroke-width="1.5" stroke-linecap="round"/>
           <line x1="10" y1="30" x2="54" y2="30" stroke="rgba(251,191,36,0.18)" stroke-width="1.5" stroke-linecap="round"/>
           <line x1="10" y1="42" x2="54" y2="42" stroke="rgba(251,191,36,0.18)" stroke-width="1.5" stroke-linecap="round"/>
-          <!-- linha base (chão) dourada sólida -->
           <line x1="10" y1="54" x2="54" y2="54" stroke="url(#goldL)" stroke-width="2.5" stroke-linecap="round"/>
-          <!-- letras RA douradas -->
-          <text x="32" y="46" text-anchor="middle"
-                font-family="Georgia,serif" font-weight="700"
-                font-size="26" letter-spacing="2"
-                fill="url(#goldL)">RA</text>
+          <text x="32" y="46" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="26" letter-spacing="2" fill="url(#goldL)">RA</text>
         </svg>
-
         <div>
           <h2 style="font-size:1.5rem;font-weight:800">Cronograma PRO</h2>
           <p style="color:var(--text-muted);font-size:.875rem">Gestão de obras e medições</p>
@@ -76,8 +65,6 @@
     <header class="app-topbar">
       <div class="brand">
         <button id="menuBtn" class="menu-btn" aria-label="Menu">☰</button>
-
-        <!-- LOGO TOPBAR (38px) -->
         <svg width="38" height="38" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="bgU" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
@@ -96,12 +83,8 @@
           <line x1="10" y1="30" x2="54" y2="30" stroke="rgba(251,191,36,0.18)" stroke-width="1.5" stroke-linecap="round"/>
           <line x1="10" y1="42" x2="54" y2="42" stroke="rgba(251,191,36,0.18)" stroke-width="1.5" stroke-linecap="round"/>
           <line x1="10" y1="54" x2="54" y2="54" stroke="url(#goldU)" stroke-width="2.5" stroke-linecap="round"/>
-          <text x="32" y="46" text-anchor="middle"
-                font-family="Georgia,serif" font-weight="700"
-                font-size="26" letter-spacing="2"
-                fill="url(#goldU)">RA</text>
+          <text x="32" y="46" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="26" letter-spacing="2" fill="url(#goldU)">RA</text>
         </svg>
-
         <div class="brand-text"><h1>Cronograma PRO</h1><p>Gestão de Obras</p></div>
       </div>
       <div class="header-actions">
@@ -178,14 +161,14 @@
           <table>
             <thead>
               <tr>
-                <th>Item</th>
-                <th>Descrição</th>
-                <th style="text-align:right">Valor Contrato</th>
-                <th style="text-align:right">Medição</th>
-                <th style="text-align:right">Acumulado</th>
-                <th style="text-align:right">Saldo</th>
-                <th style="text-align:right">% Exec.</th>
-                <th style="text-align:right">Ação</th>
+                <th data-label="ITEM" data-full="Item"></th>
+                <th data-label="DESCRIÇÃO" data-full="Descrição"></th>
+                <th style="text-align:right" data-label="VALOR CT" data-full="Valor Contrato"></th>
+                <th style="text-align:right" data-label="MED" data-full="Medição"></th>
+                <th style="text-align:right" data-label="ACUMUL" data-full="Acumulado"></th>
+                <th style="text-align:right" data-label="SALDO" data-full="Saldo"></th>
+                <th style="text-align:right" data-label="%" data-full="% Exec."></th>
+                <th style="text-align:right" data-label="AÇÃO" data-full="Ação"></th>
               </tr>
             </thead>
             <tbody id="tbody"></tbody>
@@ -203,8 +186,6 @@
     <header class="app-topbar">
       <div class="brand">
         <button id="menuBtnAdmin" class="menu-btn" aria-label="Menu Admin">☰</button>
-
-        <!-- LOGO TOPBAR ADMIN (38px) -->
         <svg width="38" height="38" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="bgA" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
@@ -223,12 +204,8 @@
           <line x1="10" y1="30" x2="54" y2="30" stroke="rgba(251,191,36,0.18)" stroke-width="1.5" stroke-linecap="round"/>
           <line x1="10" y1="42" x2="54" y2="42" stroke="rgba(251,191,36,0.18)" stroke-width="1.5" stroke-linecap="round"/>
           <line x1="10" y1="54" x2="54" y2="54" stroke="url(#goldA)" stroke-width="2.5" stroke-linecap="round"/>
-          <text x="32" y="46" text-anchor="middle"
-                font-family="Georgia,serif" font-weight="700"
-                font-size="26" letter-spacing="2"
-                fill="url(#goldA)">RA</text>
+          <text x="32" y="46" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="26" letter-spacing="2" fill="url(#goldA)">RA</text>
         </svg>
-
         <div class="brand-text"><h1>Cronograma PRO</h1><p>Painel Administrativo</p></div>
       </div>
       <div class="header-actions">
@@ -245,7 +222,6 @@
     <main class="app-main">
       <div class="stats-grid" id="adminStats" style="margin-bottom:1.5rem"></div>
 
-      <!-- Lista de colaboradores visível em mobile, logo abaixo dos 4 cards -->
       <div class="admin-colab-mobile-panel">
         <div class="section-title" style="margin-bottom:.5rem">👥 Colaboradores</div>
         <div id="adminColabSidebarMobile"></div>
@@ -255,7 +231,6 @@
         <p style="color:var(--text-muted);padding:1rem">Selecione um colaborador ao lado.</p>
       </div>
 
-      <!-- Painel de gerenciamento de colaboradores -->
       <div id="adminColabPanel" style="display:none;margin-top:1.5rem">
         <div class="panel">
           <h3 style="margin-bottom:1.25rem">Cadastrar novo colaborador</h3>
