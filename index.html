@@ -13,7 +13,7 @@
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════ LOGIN ═══════════════════════════════════════ -->
+<!-- ═══════════════════════════════════════════ LOGIN ═══════════════════════════════════════════ -->
 <div id="loginView" style="display:flex">
   <div class="login-wrapper" style="width:100%">
     <div class="login-card">
@@ -44,7 +44,7 @@
   </div>
 </div>
 
-<!-- ══════════════════════════════════════ APP USER ══════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════ APP USER ══════════════════════════════════════════ -->
 <div id="appView" style="display:none">
   <div class="app-shell">
     <header class="app-topbar">
@@ -64,12 +64,11 @@
       </div>
     </header>
 
-    <!-- aside compactado: só Obras + Ações -->
     <aside class="app-aside">
       <div class="panel" style="padding:1rem">
         <div class="section-title" style="margin-bottom:.75rem">📁 Obras</div>
         <div id="obrasBox"></div>
-        <button id="addObraBtn" class="btn btn-primary" style="width:100%;margin-top:.75rem">＋ Nova Obra</button>
+        <button id="addObraBtn" class="btn btn-primary" style="width:100%;margin-top:.75rem">️ Nova Obra</button>
       </div>
       <div class="panel" style="padding:1rem">
         <div class="section-title">🔧 Ações</div>
@@ -80,15 +79,12 @@
           <button id="fillSample" class="btn btn-danger" style="width:100%">🗑 Limpar itens</button>
         </div>
       </div>
-      <!-- campos hidden para manter compatibilidade com o JS -->
       <input id="projName"       type="hidden"/>
       <input id="projContratada" type="hidden"/>
       <input id="projScope"      type="hidden" readonly/>
     </aside>
 
     <main class="app-main">
-
-      <!-- Bloco Projeto no topo da área principal -->
       <div class="proj-banner" id="projBanner">
         <div class="proj-banner-item">
           <span class="lbl">🏗️ Projeto</span>
@@ -154,11 +150,12 @@
   <button id="btnTopo" class="btn btn-primary btnTopo" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
 </div>
 
-<!-- ══════════════════════════════════════ ADMIN ══════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════ ADMIN ══════════════════════════════════════════ -->
 <div id="adminView" style="display:none">
   <div class="app-shell">
     <header class="app-topbar">
       <div class="brand">
+        <button id="menuBtnAdmin" class="menu-btn" aria-label="Menu Admin">☰</button>
         <svg width="36" height="36" viewBox="0 0 48 48" fill="none">
           <rect width="48" height="48" rx="10" fill="#4f46e5"/>
           <path d="M14 34V18l10-6 10 6v16" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
@@ -172,7 +169,7 @@
       </div>
     </header>
 
-    <aside class="app-aside">
+    <aside class="app-aside" id="adminAside">
       <div class="section-title" style="padding:.25rem .5rem">👥 Colaboradores</div>
       <div id="adminColabSidebar"></div>
     </aside>
@@ -196,7 +193,6 @@
             <button id="addColabBtn" type="submit" class="btn btn-primary" style="align-self:flex-start">Cadastrar colaborador</button>
           </form>
         </div>
-
         <div class="panel" style="margin-top:1.25rem">
           <h3 style="margin-bottom:1rem">Colaboradores cadastrados</h3>
           <div id="colabList" style="display:flex;flex-direction:column;gap:.5rem"></div>
