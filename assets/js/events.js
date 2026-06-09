@@ -9,6 +9,7 @@ import {
   updateDashboard,
   renderAdminViews, renderAdminDetail, renderColabList, renderAdminSidebar
 } from './render.js';
+import { parseCronogramaXLSX } from './cronograma.js';
 
 export async function importFile(replace=false){
   const input=document.createElement('input');
@@ -29,17 +30,44 @@ export async function importFile(replace=false){
       } else if(ext==='json'){
         const text=await file.text(); obj=JSON.parse(text);
         rows=Array.isArray(obj)?normalizeRows(obj):normalizeRows(obj.itens);
-        if(!rows.length&&!Array.isArray(obj)&&!Array.isArray(obj.itens)) throw new Error('JSON inv\u00e1lido.');
+        if(!rows.length&&!Array.isArray(obj)&&!Array.isArray(obj.itens)) throw new Error('JSON inválido.');
       } else { obj=await readExcelFile(file); rows=normalizeRows(obj.itens); }
       const obraId=replace&&state.selectedObraId?state.selectedObraId:('obra_'+Date.now());
       const obraNome=baseName(file.name)||obj?.nome||'Nova obra';
       const obra={ id:obraId, nome:obraNome, nomeProjeto:obj?.nomeProjeto||obj?.obra||obraNome,
         contratada:obj?.contratada||'', arquivoNome:file.name, origem:ext,
         medicaoAtual:obj?.medicaoAtual||'', itens:rows, resumo:obj?.resumo||{percentual:0} };
+      // Preserva cronograma e dataInicio se já existirem
+      const existente=currentObra();
+      if(existente?.cronograma)  obra.cronograma  = existente.cronograma;
+      if(existente?.dataInicio)  obra.dataInicio  = existente.dataInicio;
       await saveObra(obra);
       state.selectedObraId=obraId;
-      showToast(`\u2705 ${rows.length} itens importados`);
-    } catch(err){ showToast('\u274c '+err.message,true); console.error(err); }
+      showToast(`✅ ${rows.length} itens importados`);
+    } catch(err){ showToast('❌ '+err.message,true); console.error(err); }
+  };
+  input.click();
+}
+
+/* ── Importar Cronograma Físico-Financeiro ── */
+export async function importCronograma(){
+  const o=currentObra();
+  if(!o){ showToast('⚠️ Selecione uma obra antes de importar o cronograma.',true); return; }
+  const input=document.createElement('input');
+  input.type='file';
+  input.accept='.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
+  input.onchange=async e=>{
+    if(!e.target.files.length) return;
+    const file=e.target.files[0];
+    try{
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      const { cronograma, totalMeses } = parseCronogramaXLSX(wb);
+      o.cronograma=cronograma;
+      await saveObra(o);
+      showToast(`✅ Cronograma importado: ${totalMeses} meses.`);
+      updateDashboard();
+    } catch(err){ showToast('❌ '+err.message,true); console.error(err); }
   };
   input.click();
 }
@@ -59,7 +87,7 @@ export function setupColabForm(){
       await signOut(auth);
       await signInWithEmailAndPassword(auth,adminEmail,ADMIN_SENHA);
       $('colabNome').value=''; $('colabEmail').value=''; $('colabSenha').value='';
-      showToast(`\u2705 "${nome}" cadastrado!`);
+      showToast(`✅ "${nome}" cadastrado!`);
     }catch(err){ msgEl.textContent=err?.message||'Erro.'; msgEl.style.display='block'; }
     finally{ btn.disabled=false; btn.textContent='Cadastrar colaborador'; }
   });
@@ -75,14 +103,14 @@ export function setupNovaAtividade(){
   const addRowBtn=$('addRow');
   if(addRowBtn) addRowBtn.onclick=()=>{
     const item=$('fItem').value.trim(), desc=$('fName').value.trim();
-    if(!item&&!desc){ showToast('\u26a0\ufe0f Preencha item ou descri\u00e7\u00e3o.',true); return; }
+    if(!item&&!desc){ showToast('⚠️ Preencha item ou descrição.',true); return; }
     const vc=parseMoney($('fValorContrato').value), med=parseMoney($('fMedicao').value), acu=parseMoney($('fAcumulado').value);
     const saldo=vc>0?vc-acu:0, p=vc>0?+(acu/vc*100).toFixed(2):0;
     state.rows.push({item,descricao:desc,valorContrato:vc,medicao:med,acumulado:acu,saldo,percentualExecutado:p});
     const o=currentObra(); if(o){ o.itens=state.rows; saveObra(o); }
     renderAll();
     $('fItem').value=''; $('fName').value=''; $('fValorContrato').value=''; $('fMedicao').value=''; $('fAcumulado').value=''; $('fSaldo').value=''; $('fPct').value='';
-    showToast('\u2705 Item adicionado.');
+    showToast('✅ Item adicionado.');
   };
 }
 
@@ -93,7 +121,7 @@ export function bindEvents(){
     const email=$('loginEmail').value.trim(), senha=$('loginSenha').value, btn=$('loginBtn');
     btn.disabled=true; btn.textContent='Entrando...'; $('loginError').style.display='none';
     try{ await signInWithEmailAndPassword(auth,email,senha); }
-    catch{ $('loginError').textContent='E-mail ou senha inv\u00e1lidos.'; $('loginError').style.display='block'; }
+    catch{ $('loginError').textContent='E-mail ou senha inválidos.'; $('loginError').style.display='block'; }
     finally{ btn.disabled=false; btn.textContent='Entrar'; }
   });
   const logoutAdmin=$('logoutBtnAdmin'); if(logoutAdmin) logoutAdmin.addEventListener('click',()=>{ cleanup(); signOut(auth); });
@@ -101,26 +129,41 @@ export function bindEvents(){
   const toggleThemeBtn=$('toggleTheme');
   if(toggleThemeBtn) toggleThemeBtn.onclick=()=>{
     document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';
-    if(state.rows.length) state.chartUser=renderCurvaS('sCurveChart','sCurveScrollWrap',state.rows,state.chartUser);
+    if(state.rows.length) state.chartUser=renderCurvaS('sCurveChart','sCurveScrollWrap',state.rows,state.chartUser,currentObra()?.cronograma);
   };
   const menuBtn=$('menuBtn');
   if(menuBtn) menuBtn.onclick=()=>{
     const aside=document.querySelector('#appView .app-aside');
     if(!aside) return;
     const open=aside.classList.toggle('aside-open');
-    menuBtn.textContent=open?'\u2715':'\u2630';
+    menuBtn.textContent=open?'✕':'☰';
   };
   const menuBtnAdmin=$('menuBtnAdmin');
   if(menuBtnAdmin) menuBtnAdmin.onclick=()=>{
     const aside=$('adminAside');
     if(!aside) return;
     const open=aside.classList.toggle('aside-open');
-    menuBtnAdmin.textContent=open?'\u2715':'\u2630';
+    menuBtnAdmin.textContent=open?'✕':'☰';
   };
   const adminToggleColab=$('adminToggleColab');
   if(adminToggleColab) adminToggleColab.onclick=()=>{ const p=$('adminColabPanel'); if(p) p.style.display=p.style.display==='none'?'block':'none'; };
   const loadFileBtn=$('loadFile');     if(loadFileBtn)  loadFileBtn.onclick=()=>importFile(false);
   const addObraBtn=$('addObraBtn');    if(addObraBtn)   addObraBtn.onclick=()=>importFile(false);
+
+  // Botão importar cronograma
+  const loadCronoBtn=$('loadCronograma');
+  if(loadCronoBtn) loadCronoBtn.onclick=()=>importCronograma();
+
+  // Campo data início contrato
+  const projDataInicio=$('projDataInicio');
+  if(projDataInicio) projDataInicio.addEventListener('change',async()=>{
+    const o=currentObra(); if(!o) return;
+    o.dataInicio=projDataInicio.value;
+    await saveObra(o);
+    updateDashboard();
+    showToast('✅ Data de início salva.');
+  });
+
   const fillSampleBtn=$('fillSample'); if(fillSampleBtn) fillSampleBtn.onclick=()=>{
     if(!confirm('Limpar todos os itens?')) return;
     state.rows=[]; const o=currentObra(); if(o){ o.itens=[]; saveObra(o); } renderAll();
@@ -184,6 +227,6 @@ export function bindEvents(){
     if(state.adminSubs[uid]){ state.adminSubs[uid](); delete state.adminSubs[uid]; }
     if(state.adminSelectedUid===uid){ state.adminSelectedUid=null; state.adminSelectedObraId=null; }
     renderAdminViews(); renderAdminDetail();
-    showToast('\u2705 Colaborador removido.');
+    showToast('✅ Colaborador removido.');
   };
 }

@@ -1,4 +1,4 @@
-import { $, state, esc, money, pct, calcPctGeral } from './state.js';
+import { $, state, esc, money, pct, calcPctGeral, buildCronogramaTimeline } from './state.js';
 import { db } from './firebase.js';
 import { doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
@@ -10,7 +10,11 @@ export function scheduleSave(){
 }
 export function currentObra(){ return state.obras.find(o => o.id === state.selectedObraId); }
 
-export function renderCurvaS(canvasId,wrapId,itens,prev){
+/* ────────────────────────────────────────────────────────────
+   renderCurvaS — gráfico com linha de planejado sobreposta
+   Não altera nenhum dado de medição existente.
+──────────────────────────────────────────────────────────── */
+export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData){
   const canvas=$(canvasId); if(!canvas) return prev;
   if(prev) prev.destroy();
   const dark=document.documentElement.dataset.theme==='dark';
@@ -18,28 +22,92 @@ export function renderCurvaS(canvasId,wrapId,itens,prev){
   const tc=dark?'#94a3b8':'#64748b';
   const mobile=window.innerWidth<=900;
   const wrap=$(wrapId);
-  if(wrap){
-    wrap.style.overflowX='hidden';
-    canvas.style.minWidth='';
-    canvas.style.width='100%';
-  }
+  if(wrap){ wrap.style.overflowX='hidden'; canvas.style.minWidth=''; canvas.style.width='100%'; }
+
   const n=itens.length;
   const containerW=wrap?wrap.offsetWidth:600;
   const thickness=mobile
-    ? Math.max(4, Math.floor((containerW-16)/(n||1))-2)
+    ? Math.max(4,Math.floor((containerW-16)/(n||1))-2)
     : Math.max(18,Math.min(40,Math.floor(600/(n||1))));
+
+  // Dataset base: barras do executado (inalterado)
+  const datasets=[{
+    type:'bar',
+    label:'% Executado',
+    data: itens.map(r=>Number(r.percentualExecutado)||0),
+    backgroundColor:'rgba(99,102,241,0.2)',
+    borderColor:'#6366f1',
+    borderWidth:1,
+    borderRadius:3,
+    barThickness: mobile?'flex':thickness,
+    order:2
+  }];
+
+  // Dataset linha planejada — só adiciona se houver cronograma + dataInicio
+  const obra = currentObra();
+  const timeline = (cronogramaData && obra?.dataInicio)
+    ? buildCronogramaTimeline(obra.dataInicio, cronogramaData)
+    : null;
+
+  let labels = itens.map(r=>String(r.item||''));
+
+  if(timeline && timeline.length){
+    // Reorganiza eixo X por mês (timeline) e adiciona acumulado planejado vs executado real acumulado
+    const totalVC = itens.reduce((a,r)=>a+(Number(r.valorContrato)||0),0);
+    const totalAcu= itens.reduce((a,r)=>a+(Number(r.acumulado)||0),0);
+    const realPctGeral = totalVC>0 ? +(totalAcu/totalVC*100).toFixed(2) : 0;
+
+    // Acumula % planejado mês a mês
+    let acumPlan=0;
+    const planData = timeline.map(t=>{ acumPlan+=t.planejadoPct; return +acumPlan.toFixed(2); });
+
+    // % real: distribui linearmente pelos meses para comparação visual
+    const nMeses = timeline.length;
+    const realData = timeline.map((t,i)=>{
+      if(!t.passado) return null;
+      return +(realPctGeral / nMeses * (i+1)).toFixed(2);
+    });
+
+    labels = timeline.map(t=>t.label);
+    datasets.length=0; // substitui datasets no modo cronograma
+    datasets.push({
+      type:'line',
+      label:'Planejado (%)',
+      data: planData,
+      borderColor:'#f59e0b',
+      backgroundColor:'rgba(245,158,11,0.08)',
+      borderWidth:2,
+      pointRadius:3,
+      tension:0.3,
+      fill:false,
+      order:1
+    },{
+      type:'line',
+      label:'Executado Real (%)',
+      data: realData,
+      borderColor:'#10b981',
+      backgroundColor:'rgba(16,185,129,0.1)',
+      borderWidth:2,
+      pointRadius:3,
+      tension:0.3,
+      fill:false,
+      spanGaps:false,
+      order:0
+    });
+  }
+
   return new Chart(canvas.getContext('2d'),{
     type:'bar',
-    data:{ labels:itens.map(r=>String(r.item||'')),
-      datasets:[{ label:'% Executado', data:itens.map(r=>Number(r.percentualExecutado)||0),
-        backgroundColor:'rgba(99,102,241,0.2)',borderColor:'#6366f1',borderWidth:1,borderRadius:3,
-        barThickness: mobile ? 'flex' : thickness }] },
+    data:{ labels, datasets },
     options:{
       responsive:true,
       maintainAspectRatio:false,
-      scales:{ y:{beginAtZero:true,max:100,grid:{color:gc},ticks:{color:tc,callback:v=>v+'%'}},
-        x:{grid:{display:false},ticks:{color:tc,font:{size:mobile?8:10},maxRotation:mobile?90:45,minRotation:0}} },
-      plugins:{legend:{labels:{color:tc}}} }
+      scales:{
+        y:{ beginAtZero:true, max:100, grid:{color:gc}, ticks:{color:tc,callback:v=>v+'%'} },
+        x:{ grid:{display:false}, ticks:{color:tc,font:{size:mobile?8:10},maxRotation:mobile?90:45,minRotation:0} }
+      },
+      plugins:{ legend:{labels:{color:tc}} }
+    }
   });
 }
 
@@ -48,6 +116,8 @@ export function applySelected(o){
   const pn=$('projName'); if(pn) pn.value=o.nomeProjeto||o.nome||'Nova obra';
   const pc=$('projContratada'); if(pc) pc.value=o.contratada||'';
   const ps=$('projScope'); if(ps) ps.value=o.medicaoAtual||'';
+  // preenche campo data início
+  const di=$('projDataInicio'); if(di) di.value=o.dataInicio||'';
 }
 
 export function renderTable(){
@@ -85,7 +155,7 @@ export function updateDashboard(){
   if($('mainProjName'))       $('mainProjName').textContent       = o?.nomeProjeto||o?.nome||'-';
   if($('mainProjContratada')) $('mainProjContratada').textContent  = o?.contratada||'-';
   if($('mainProjScope'))      $('mainProjScope').textContent       = o?.medicaoAtual||'-';
-  state.chartUser=renderCurvaS('sCurveChart','sCurveScrollWrap',state.rows,state.chartUser);
+  state.chartUser=renderCurvaS('sCurveChart','sCurveScrollWrap',state.rows,state.chartUser,o?.cronograma);
 }
 
 export function renderObrasBox(){
@@ -124,7 +194,7 @@ export function renderAll(){ renderObrasBox(); renderTable(); updateDashboard();
 let importFileFn = ()=>{};
 export function setImportFileFn(fn){ importFileFn = fn; }
 
-/* ---- ADMIN ---- */
+/* ── ADMIN ── */
 export function renderAdminStats(){
   let tot=0,tvc=0,tac=0;
   Object.values(state.allUsers).forEach(u=>{
@@ -189,10 +259,12 @@ export function adminObraCardHTML(obra){
   const vc=Number(obra.resumo?.valorContratoAditivo)||it.reduce((a,i)=>a+Number(i.valorContrato||0),0);
   const ac=Number(obra.resumo?.acumuladoTotal)||it.reduce((a,i)=>a+Number(i.acumulado||0),0);
   const p=calcPctGeral(obra.resumo,it);
+  const temCrono=Array.isArray(obra.cronograma)&&obra.cronograma.length>0;
+  const temData=!!obra.dataInicio;
   return `<div class="obra-card" style="cursor:pointer" onclick="adminSelectObra('${obra.id}')">
     <div class="obra-card-header">
       <div><div class="obra-card-title">${esc(obra.nome||'Sem nome')}</div>
-      <div class="obra-card-sub">${it.length} itens | Aba: ${esc(obra.medicaoAtual||'-')}</div></div>
+      <div class="obra-card-sub">${it.length} itens | Aba: ${esc(obra.medicaoAtual||'-')}${temCrono&&temData?' | 📅 Cronograma':''}</div></div>
       <div class="obra-card-pct">${pct(p)}</div></div>
     <div class="obra-progress-bar"><div class="obra-progress-fill" style="width:${Math.min(100,p)}%"></div></div>
     <div class="obra-card-footer">
@@ -225,6 +297,8 @@ export function renderAdminDetail(){
   const p=calcPctGeral(obra.resumo,it);
   const tMed=it.reduce((a,i)=>a+Number(i.medicao||0),0);
   const contratadaNome=obra.contratada||'-';
+  const dataInicioStr=obra.dataInicio?new Date(obra.dataInicio+'T00:00:00').toLocaleDateString('pt-BR'):'-';
+  const temCrono=Array.isArray(obra.cronograma)&&obra.cronograma.length>0;
   html+=
     `<div class="admin-stats-grid">
        <div class="stat-card compact"><span class="stat-label">Valor CT / Aditivo</span><span class="stat-value">${money(vc)}</span></div>
@@ -232,11 +306,11 @@ export function renderAdminDetail(){
        <div class="stat-card compact"><span class="stat-label">% Geral</span><span class="stat-value">${pct(p)}</span></div>
        <div class="stat-card compact"><span class="stat-label">Medição Atual</span><span class="stat-value">${esc(obra.medicaoAtual||'-')}</span></div>
        <div class="stat-card compact"><span class="stat-label">Contratada</span><span class="stat-value" style="font-size:.85rem;word-break:break-word">${esc(contratadaNome)}</span></div>
-       <div class="stat-card compact"><span class="stat-label">Medição</span><span class="stat-value">${money(tMed)}</span></div>
+       <div class="stat-card compact"><span class="stat-label">Início Contrato</span><span class="stat-value" style="font-size:.95rem">${dataInicioStr}</span></div>
        <div class="stat-card compact"><span class="stat-label">Saldo</span><span class="stat-value">${money(vc-ac)}</span></div>
      </div>
      <div class="panel" style="margin-bottom:1.5rem">
-       <h3 style="margin-bottom:1rem">Curva S — Progresso Físico</h3>
+       <h3 style="margin-bottom:1rem">Curva S${temCrono&&obra.dataInicio?' — Planejado vs Executado':' — Progresso Físico'}</h3>
        <div class="chart-scroll-wrap" id="adminCurvaSwrap"><div class="chart-container"><canvas id="adminCurvaS"></canvas></div></div>
      </div>
      <div class="panel">
@@ -266,7 +340,9 @@ export function renderAdminDetail(){
        </table></div>
      </div>`;
   panel.innerHTML=html;
-  requestAnimationFrame(()=>{ state.chartAdmin=renderCurvaS('adminCurvaS','adminCurvaSwrap',it,state.chartAdmin); });
+  requestAnimationFrame(()=>{
+    state.chartAdmin=renderCurvaS('adminCurvaS','adminCurvaSwrap',it,state.chartAdmin,obra.cronograma);
+  });
 }
 
 export function renderAdminViews(){ renderAdminStats(); renderAdminSidebar(); renderColabList(); }

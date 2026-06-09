@@ -21,12 +21,10 @@
         <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="bgL" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#1e293b"/>
-              <stop offset="100%" stop-color="#0f172a"/>
+              <stop offset="0%" stop-color="#1e293b"/><stop offset="100%" stop-color="#0f172a"/>
             </linearGradient>
             <linearGradient id="goldL" x1="12" y1="20" x2="52" y2="56" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#fbbf24"/>
-              <stop offset="100%" stop-color="#d97706"/>
+              <stop offset="0%" stop-color="#fbbf24"/><stop offset="100%" stop-color="#d97706"/>
             </linearGradient>
           </defs>
           <rect width="64" height="64" rx="16" fill="url(#bgL)"/>
@@ -44,14 +42,8 @@
         </div>
       </div>
       <form id="loginForm" style="display:flex;flex-direction:column;gap:1rem">
-        <div class="form-group">
-          <label for="loginEmail">E-mail</label>
-          <input id="loginEmail" type="email" class="form-control" placeholder="seu@email.com" required autocomplete="email"/>
-        </div>
-        <div class="form-group">
-          <label for="loginSenha">Senha</label>
-          <input id="loginSenha" type="password" class="form-control" placeholder="••••••••" required autocomplete="current-password"/>
-        </div>
+        <div class="form-group"><label for="loginEmail">E-mail</label><input id="loginEmail" type="email" class="form-control" placeholder="seu@email.com" required autocomplete="email"/></div>
+        <div class="form-group"><label for="loginSenha">Senha</label><input id="loginSenha" type="password" class="form-control" placeholder="••••••••" required autocomplete="current-password"/></div>
         <div id="loginError" style="display:none;color:var(--danger);font-size:.8rem;background:rgba(239,68,68,.08);padding:.6rem .875rem;border-radius:var(--radius-sm)"></div>
         <button id="loginBtn" type="submit" class="btn btn-primary" style="width:100%;margin-top:.25rem">Entrar</button>
       </form>
@@ -68,12 +60,10 @@
         <svg width="38" height="38" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="bgU" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#1e293b"/>
-              <stop offset="100%" stop-color="#0f172a"/>
+              <stop offset="0%" stop-color="#1e293b"/><stop offset="100%" stop-color="#0f172a"/>
             </linearGradient>
             <linearGradient id="goldU" x1="12" y1="20" x2="52" y2="56" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#fbbf24"/>
-              <stop offset="100%" stop-color="#d97706"/>
+              <stop offset="0%" stop-color="#fbbf24"/><stop offset="100%" stop-color="#d97706"/>
             </linearGradient>
           </defs>
           <rect width="64" height="64" rx="14" fill="url(#bgU)"/>
@@ -104,6 +94,7 @@
         <div class="section-title">🔧 Ações</div>
         <div style="display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem">
           <button id="loadFile" class="btn btn-sec" style="width:100%">📂 Importar Excel / JSON</button>
+          <button id="loadCronograma" class="btn btn-sec" style="width:100%">📅 Importar Cronograma</button>
           <button id="exportCsv" class="btn btn-sec" style="width:100%">⬇️ Exportar CSV</button>
           <button id="saveJson" class="btn btn-sec" style="width:100%">💾 Salvar JSON</button>
           <button id="fillSample" class="btn btn-danger" style="width:100%">🗑 Limpar itens</button>
@@ -132,10 +123,21 @@
         </div>
       </div>
 
+      <!-- Painel: Data de Início do Contrato -->
+      <div class="panel" style="margin-bottom:1.25rem">
+        <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+          <div class="form-group" style="margin:0;flex:1;min-width:200px">
+            <label style="font-size:.8rem;font-weight:600;color:var(--text-muted)">📅 Data de Início do Contrato</label>
+            <input id="projDataInicio" type="date" class="form-control" style="max-width:220px"/>
+          </div>
+          <div id="cronoStatus" style="font-size:.8rem;color:var(--text-muted);padding-top:.25rem"></div>
+        </div>
+      </div>
+
       <div class="stats-grid" id="stats"></div>
 
       <div class="panel" style="margin-bottom:1.25rem">
-        <h3 style="margin-bottom:1rem">Curva S — Progresso Físico</h3>
+        <h3 style="margin-bottom:1rem" id="sCurveTitle">Curva S — Progresso Físico</h3>
         <div class="chart-scroll-wrap" id="sCurveScrollWrap">
           <div class="chart-container"><canvas id="sCurveChart"></canvas></div>
         </div>
@@ -189,12 +191,10 @@
         <svg width="38" height="38" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="bgA" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#1e293b"/>
-              <stop offset="100%" stop-color="#0f172a"/>
+              <stop offset="0%" stop-color="#1e293b"/><stop offset="100%" stop-color="#0f172a"/>
             </linearGradient>
             <linearGradient id="goldA" x1="12" y1="20" x2="52" y2="56" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#fbbf24"/>
-              <stop offset="100%" stop-color="#d97706"/>
+              <stop offset="0%" stop-color="#fbbf24"/><stop offset="100%" stop-color="#d97706"/>
             </linearGradient>
           </defs>
           <rect width="64" height="64" rx="14" fill="url(#bgA)"/>

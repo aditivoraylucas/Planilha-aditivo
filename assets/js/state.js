@@ -46,3 +46,36 @@ export function cleanup(adminSubs, allUsers){
   state.adminSubs = {}; state.allUsers = {};
   state.adminSelectedUid = null; state.adminSelectedObraId = null;
 }
+
+/* ── Cronograma Físico-Financeiro ── */
+/**
+ * Dado dataInicio (string 'YYYY-MM-DD') e o array cronograma da obra,
+ * retorna array de { label, planejadoPct, planejadoValor } alinhado ao mês atual.
+ * O mês 1 começa no mês de dataInicio.
+ */
+export function buildCronogramaTimeline(dataInicio, cronograma){
+  if(!dataInicio || !Array.isArray(cronograma) || !cronograma.length) return [];
+  const inicio = new Date(dataInicio + 'T00:00:00');
+  const hoje   = new Date();
+  const mesesDecorridos = Math.max(0,
+    (hoje.getFullYear() - inicio.getFullYear()) * 12 +
+    (hoje.getMonth()   - inicio.getMonth())
+  );
+  // cronograma é array de { mes, planejadoPct, planejadoValor } com mes 1..N
+  const maxMes = Math.max(...cronograma.map(c => c.mes));
+  const result = [];
+  for(let m = 1; m <= maxMes; m++){
+    const d = new Date(inicio);
+    d.setMonth(d.getMonth() + (m - 1));
+    const label = d.toLocaleDateString('pt-BR',{month:'short', year:'2-digit'});
+    const entry = cronograma.find(c => c.mes === m);
+    result.push({
+      mes: m,
+      label,
+      planejadoPct:   entry ? +entry.planejadoPct.toFixed(2)   : 0,
+      planejadoValor: entry ? +entry.planejadoValor.toFixed(2) : 0,
+      passado: m <= mesesDecorridos + 1
+    });
+  }
+  return result;
+}
