@@ -159,7 +159,7 @@ tr:hover td{background:var(--surface-hover)}
 .proj-banner-item .val{font-size:.9rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
 .proj-banner-sep{width:1px;height:2rem;background:var(--border);flex-shrink:0}
 
-/* Mobile (<=900px) */
+/* ══════════════════════════════════════ MOBILE (<=900px) ══════════════════════════════════════ */
 @media(max-width:900px){
   .app-shell{
     display:flex;
@@ -199,11 +199,47 @@ tr:hover td{background:var(--surface-hover)}
   .stat-value{font-size:1.1rem;}
   .stat-label{font-size:.65rem;}
   .panel{padding:1rem;}
-  .chart-scroll-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;}
-  .chart-container{height:200px;min-width:420px;}
-  .table-container{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;}
-  th,td{padding:.4rem .6rem;font-size:.72rem;}
-  .td-desc{max-width:140px;}
+
+  /* ── Curva S: sem scroll, gráfico responde à largura do container ── */
+  .chart-scroll-wrap{
+    overflow:hidden;
+    width:100%;
+  }
+  .chart-container{
+    height:180px;
+    width:100%;
+    min-width:0;
+  }
+  .chart-container canvas{
+    max-width:100% !important;
+  }
+
+  /* ── Tabela: sem scroll, colunas menos importantes ocultas ── */
+  .table-container{
+    overflow:hidden;
+    width:100%;
+  }
+  table{
+    width:100%;
+    table-layout:fixed;
+  }
+  th,td{
+    padding:.35rem .45rem;
+    font-size:.68rem;
+    white-space:normal;
+    word-break:break-word;
+  }
+  /* Oculta colunas Medição e Saldo no mobile (3ª e 5ª colunas de dados) */
+  th:nth-child(4), td:nth-child(4),
+  th:nth-child(6), td:nth-child(6){
+    display:none;
+  }
+  .td-desc{
+    max-width:none;
+    white-space:normal;
+    word-break:break-word;
+  }
+
   .add-form-grid{grid-template-columns:1fr 1fr;gap:.5rem;}
   .btnTopo{bottom:1rem;right:.75rem;}
   .admin-layout{grid-template-columns:1fr;}
@@ -219,4 +255,5 @@ tr:hover td{background:var(--surface-hover)}
   .stats-grid{grid-template-columns:1fr;}
   .admin-stats-grid{grid-template-columns:1fr;}
   .add-form-grid{grid-template-columns:1fr;}
+  th,td{padding:.3rem .35rem;font-size:.62rem;}
 }
