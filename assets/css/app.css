@@ -90,11 +90,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
   gap:.75rem;
   margin-bottom:1.5rem;
 }
-.admin-stats-grid::after{
-  content:'';
-  grid-column:4;
-  grid-row:2;
-  display:block;
+
+/* Painel de colaboradores no mobile (abaixo dos 4 cards) — oculto no desktop */
+.admin-colab-mobile-panel{
+  display:none;
 }
 
 /* Formulários */
@@ -166,7 +165,7 @@ table td:first-child{
 .proj-banner-item .val{font-size:.9rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
 .proj-banner-sep{width:1px;height:2rem;background:var(--border);flex-shrink:0}
 
-/* ══════════════════════════════════════ MOBILE (<=900px) ══════════════════════════════════════ */
+/* ════════════════════════════════════════ MOBILE (<=900px) ════════════════════════════════════════ */
 @media(max-width:900px){
   html{ font-size:85%; }
   .app-shell{
@@ -201,9 +200,18 @@ table td:first-child{
     overflow:visible;
     padding:.75rem;
   }
+  /* Lista de colaboradores aparece direto na main do admin no mobile */
+  .admin-colab-mobile-panel{
+    display:block;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius-md);
+    padding:1rem;
+    margin-bottom:1rem;
+    box-shadow:var(--shadow-sm);
+  }
   .stats-grid{grid-template-columns:repeat(2,1fr);gap:.5rem;margin-bottom:.75rem;}
   .admin-stats-grid{grid-template-columns:repeat(2,1fr);gap:.5rem;}
-  .admin-stats-grid::after{display:none;}
   .stat-value{font-size:1rem;}
   .stat-label{font-size:.6rem;}
   .panel{padding:.75rem;}
