@@ -15,7 +15,7 @@ function detectColumns(data){
   const RE_ITEM = /^(item|n[°º\.°]|num\.?|no\.?)$/i;
   const RE = {
     desc:  /discrimina|descri[çc]|servic[oa]|servi[çc]|especific|designa/i,
-    med:   /no[\s.]*(per[ií]odo|mes|m[eê]s)|^medic[aã]o$|^realizado$|periodo|esta[\s.]*medi|med\.?\s*atual|\bmed\b|medi[çc]/i,
+    med:   /no[\s.]*(per[ií]odo|mes|m[eê]s)|^medic[a\u00e3]o$|^realizado$|periodo|esta[\s.]*medi|med\.?\s*atual|\bmed\b|medi[çc]/i,
     acum:  /acumulado|acum\.?/i,
     saldo: /saldo/i
   };
@@ -135,61 +135,46 @@ function findValorContrato(rows){
 /**
  * Extrai o valor monetário de "Esta Medição" do cabeçalho.
  *
- * Estratégia:
- *  1. Varre TODAS as células que correspondem ao rótulo (não para na primeira).
- *  2. Para cada ocorrência, coleta candidatos numéricos nas vizinhanças
- *     (direita, abaixo, diagonal).
- *  3. Filtra apenas valores > 100 (valor monetário real, descarta nº da medição).
- *  4. Retorna o maior candidato encontrado (mais próximo do valor total da medição).
- *  5. Se nenhum > 100, repete com limiar > 0 e retorna o maior.
+ * Regra: o valor SEMPRE está na mesma coluna do rótulo,
+ * podendo estar na mesma célula (mesclada) ou nas linhas
+ * imediatamente abaixo. NUNCA busca colunas à direita.
  */
 function findEstaMedicao(rows){
-  const RE = /esta[\s.]*medi[çc]|úslt[ai]ma[\s.]*medi[çc]|medi[çc][aã]o[\s.]*atual|valor[\s.]*desta[\s.]*medi[çc]/i;
+  const RE = /esta[\s.]*medi[çc]|última[\s.]*medi[çc]|medi[çc][aã]o[\s.]*atual|valor[\s.]*desta[\s.]*medi[çc]/i;
 
-  function collectNeighbors(rows, r, c){
-    const nums = [];
-    const row = rows[r] || [];
-    // direita (até 16 colunas)
-    for(let cc = c + 1; cc < Math.min(c + 17, row.length); cc++){
-      const v = Number(row[cc]); if(v > 0) nums.push(v);
-    }
-    // linhas abaixo (até 5)
-    for(let rr = r + 1; rr <= r + 5 && rr < rows.length; rr++){
-      // mesma coluna
-      const v = Number(rows[rr]?.[c]); if(v > 0) nums.push(v);
-      // colunas vizinhas
-      for(let cc = Math.max(0, c - 2); cc <= c + 4; cc++){
-        const v2 = Number(rows[rr]?.[cc]); if(v2 > 0) nums.push(v2);
-      }
-    }
-    // linha acima (células mescladas: rótulo pode estar uma linha antes do valor)
-    if(r > 0){
-      for(let cc = Math.max(0, c - 2); cc <= c + 4; cc++){
-        const v = Number(rows[r - 1]?.[cc]); if(v > 0) nums.push(v);
-      }
-    }
-    return nums;
-  }
+  const candidates = [];
 
-  const allCandidates = [];
   for(let r = 0; r < rows.length; r++){
     const row = rows[r] || [];
     for(let c = 0; c < row.length; c++){
       const cell = String(row[c] ?? '').trim();
       if(!cell || !RE.test(cell)) continue;
-      const nums = collectNeighbors(rows, r, c);
-      allCandidates.push(...nums);
+
+      // Mesma célula pode conter o valor após o rótulo (ex: "Esta Medição: 12345")
+      const inlineMatch = cell.replace(RE, '').match(/[\d.,]+/);
+      if(inlineMatch){
+        const v = Number(inlineMatch[0].replace(/\./g,'').replace(',','.'));
+        if(v > 0) candidates.push(v);
+      }
+
+      // Busca SOMENTE abaixo, mesma coluna (até 6 linhas)
+      for(let rr = r + 1; rr <= r + 6 && rr < rows.length; rr++){
+        const cell2 = String(rows[rr]?.[c] ?? '').trim();
+        // Para se encontrar outro rótulo (célula de texto não numérica)
+        if(cell2 && isNaN(Number(cell2.replace(/[.,\s]/g,''))) && !/^[\d.,\s]+$/.test(cell2)) break;
+        const v = Number(String(rows[rr]?.[c] ?? '').replace(/[.\s]/g,'').replace(',','.'));
+        if(v > 0) candidates.push(v);
+      }
     }
   }
 
-  if(!allCandidates.length) return 0;
+  if(!candidates.length) return 0;
 
   // Prioridade: valor monetário real (> 100)
-  const monetarios = allCandidates.filter(v => v > 100);
+  const monetarios = candidates.filter(v => v > 100);
   if(monetarios.length) return Math.max(...monetarios);
 
-  // Fallback: qualquer valor > 0 (caso obra pequena)
-  return Math.max(...allCandidates);
+  return Math.max(...candidates);
 }
 
 function extractMetaFromHeaders(data, firstDataRowIdx){
@@ -300,7 +285,6 @@ export async function readExcelFile(file){
   const sumAcum=items.reduce((a,i)=>a+i.acumulado,0);
   const vca=meta.valorContratoAditivo||sumVC;
   const acu=meta.acumuladoTotal>0?meta.acumuladoTotal:sumAcum;
-  // estaMedicao: valor do cabeçalho tem prioridade; fallback soma da coluna medicao dos itens
   const estaMed = meta.estaMedicao > 0 ? meta.estaMedicao : items.reduce((a,i)=>a+i.medicao,0);
   return {
     nome:baseName(file.name), nomeProjeto:wb.Props?.Title||baseName(file.name)||'Nova obra',
