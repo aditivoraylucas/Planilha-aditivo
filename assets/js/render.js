@@ -105,7 +105,48 @@ export function renderTable(){
   }).join('');
 }
 
-/* ── Dashboard do colaborador (painel fixo) ── */
+/* ── Painel de Cronograma no aside ── */
+export function renderCronogramaBox(){
+  const box=$('cronogramaBox'); if(!box) return;
+  const o=currentObra();
+  if(!o){
+    box.innerHTML='<p style="color:var(--text-muted);font-size:.8rem">Selecione uma obra para gerenciar o cronograma.</p>';
+    return;
+  }
+  const temCrono = Array.isArray(o.cronograma) && o.cronograma.length > 0;
+  const totalMeses = temCrono ? o.cronograma.length : 0;
+  const dataFimStr = temCrono && o.dataInicio ? (() => {
+    const [ano,mes] = o.dataInicio.split('-').map(Number);
+    const tot = mes - 1 + totalMeses;
+    const d = new Date(ano + Math.floor(tot/12), (tot%12), 0);
+    return d.toLocaleDateString('pt-BR');
+  })() : null;
+
+  if(temCrono){
+    box.innerHTML=
+      `<div style="display:flex;flex-direction:column;gap:.35rem">
+         <div style="font-size:.8rem;color:var(--text-muted)">📊 <strong style="color:var(--text)">${totalMeses} meses</strong> importados</div>
+         ${dataFimStr?`<div style="font-size:.75rem;color:var(--text-muted)">🏁 Término previsto: <strong>${dataFimStr}</strong></div>`:''}
+       </div>
+       <button id="removeCronogramaBtn" class="btn btn-danger" style="width:100%;margin-top:.6rem;font-size:.8rem">🗑 Remover Cronograma</button>`;
+  } else {
+    box.innerHTML='<p style="color:var(--text-muted);font-size:.8rem">Nenhum cronograma importado para esta obra.</p>';
+  }
+
+  const removeBtn=$('removeCronogramaBtn');
+  if(removeBtn) removeBtn.onclick=async()=>{
+    if(!confirm('Remover o cronograma desta obra?')) return;
+    delete o.cronograma;
+    await saveObra(o);
+    renderCronogramaBox();
+    updateDashboard();
+    showToast('✅ Cronograma removido.');
+  };
+}
+
+import { showToast } from './state.js';
+
+/* ---- Dashboard do colaborador (painel fixo) ---- */
 export function updateDashboard(){
   const o=currentObra();
   const vc     = Number(o?.resumo?.valorContratoAditivo)||state.rows.reduce((a,r)=>a+Number(r.valorContrato||0),0);
@@ -132,6 +173,7 @@ export function renderObrasBox(){
   const box=$('obrasBox'); if(!box) return;
   if(!state.obras.length){
     box.innerHTML='<p style="color:var(--text-muted);font-size:.8rem">Nenhuma obra cadastrada.</p>';
+    renderCronogramaBox();
     return;
   }
   box.innerHTML=
@@ -158,6 +200,7 @@ export function renderObrasBox(){
     else{ state.rows=[]; ['projName','projContratada','projScope'].forEach(id=>{const el=$(id);if(el)el.value='';}); }
     renderAll();
   };
+  renderCronogramaBox();
 }
 
 export function renderAll(){ renderObrasBox(); renderTable(); updateDashboard(); }

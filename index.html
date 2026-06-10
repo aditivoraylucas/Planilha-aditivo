@@ -85,21 +85,32 @@
     </header>
 
     <aside class="app-aside">
+
+      <!-- OBRAS -->
       <div class="panel" style="padding:1rem">
         <div class="section-title" style="margin-bottom:.75rem">📁 Obras</div>
         <div id="obrasBox"></div>
         <button id="addObraBtn" class="btn btn-primary" style="width:100%;margin-top:.75rem">️ Nova Obra</button>
       </div>
+
+      <!-- CRONOGRAMA -->
+      <div class="panel" style="padding:1rem">
+        <div class="section-title" style="margin-bottom:.75rem">📅 Cronograma</div>
+        <div id="cronogramaBox"></div>
+        <button id="loadCronograma" class="btn btn-primary" style="width:100%;margin-top:.75rem">📅 Importar Cronograma</button>
+      </div>
+
+      <!-- AÇÕES -->
       <div class="panel" style="padding:1rem">
         <div class="section-title">🔧 Ações</div>
         <div style="display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem">
           <button id="loadFile" class="btn btn-sec" style="width:100%">📂 Importar Excel / JSON</button>
-          <button id="loadCronograma" class="btn btn-sec" style="width:100%">📅 Importar Cronograma</button>
           <button id="exportCsv" class="btn btn-sec" style="width:100%">⬇️ Exportar CSV</button>
           <button id="saveJson" class="btn btn-sec" style="width:100%">💾 Salvar JSON</button>
           <button id="fillSample" class="btn btn-danger" style="width:100%">🗑 Limpar itens</button>
         </div>
       </div>
+
       <input id="projName"       type="hidden"/>
       <input id="projContratada" type="hidden"/>
       <input id="projScope"      type="hidden" readonly/>
