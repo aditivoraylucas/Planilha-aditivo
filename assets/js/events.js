@@ -6,7 +6,7 @@ import { readExcelFile, normalizeRows } from './excel.js';
 import {
   saveObra, deleteObra, scheduleSave, currentObra,
   renderAll, renderCurvaS, applySelected, setImportFileFn,
-  updateDashboard,
+  updateDashboard, renderCronogramaBox,
   renderAdminViews, renderAdminDetail, renderColabList, renderAdminSidebar
 } from './render.js';
 import { parseCronogramaXLSX } from './cronograma.js';
@@ -69,6 +69,7 @@ export async function importCronograma(){
       o.cronograma=cronograma;
       await saveObra(o);
       showToast(`✅ Cronograma importado: ${totalMeses} meses.`);
+      renderCronogramaBox();
       updateDashboard();
     } catch(err){ showToast('❌ '+err.message,true); console.error(err); }
   };
@@ -164,6 +165,7 @@ export function bindEvents(){
     const o=currentObra(); if(!o) return;
     o.dataInicio=projDataInicio.value;
     await saveObra(o);
+    renderCronogramaBox();
     updateDashboard();
     showToast('✅ Data de início salva.');
   });
