@@ -235,7 +235,7 @@ table td:first-child{
     min-width:0 !important;
   }
 
-  /* ── Tabela mobile: layout fixo com colunas proporcionais ── */
+  /* ── Tabela mobile (colaborador): layout fixo com colunas proporcionais ── */
   .table-container{
     overflow-x:hidden;
     width:100%;
@@ -312,6 +312,31 @@ table td:first-child{
 
   /* Cabeçalhos abreviados no mobile */
   th[data-label]::before{ content: attr(data-label) !important; }
+
+  /* ── Tabela do admin: zoom reduzido exclusivamente ── */
+  .admin-table{
+    font-size:0.38rem;
+  }
+  .admin-table th,
+  .admin-table td{
+    padding:.15rem .08rem;
+  }
+  /* col 2 — DESCRIÇÃO (admin, sem lixeira) */
+  .admin-table th:nth-child(2),
+  .admin-table td:nth-child(2){
+    width:26%;
+  }
+  /* cols numéricas: distribuídas em 7 colunas sem botão */
+  .admin-table th:nth-child(3),
+  .admin-table td:nth-child(3),
+  .admin-table th:nth-child(4),
+  .admin-table td:nth-child(4),
+  .admin-table th:nth-child(5),
+  .admin-table td:nth-child(5),
+  .admin-table th:nth-child(6),
+  .admin-table td:nth-child(6){ width:13%; text-align:right; }
+  .admin-table th:nth-child(7),
+  .admin-table td:nth-child(7){ width:8%; text-align:right; }
 }
 
 @media(max-width:400px){
@@ -328,4 +353,7 @@ table td:first-child{
   table th:nth-child(4), table td:nth-child(4),
   table th:nth-child(5), table td:nth-child(5),
   table th:nth-child(6), table td:nth-child(6){ width:13%; }
+
+  /* admin ainda menor em telas minúsculas */
+  .admin-table{ font-size:0.32rem; }
 }
