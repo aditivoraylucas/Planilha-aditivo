@@ -133,6 +133,36 @@ function findValorContrato(rows){
 }
 
 /**
+ * Converte um valor de célula para número, suportando:
+ *  - Número nativo do Excel (já float)
+ *  - Formato BR: "120.326,47"  → 120326.47
+ *  - Formato US: "120,326.47"  → 120326.47
+ *  - Inteiro simples: "120326"
+ */
+function parseValor(raw){
+  if(raw === '' || raw === null || raw === undefined) return 0;
+  // Se já é número nativo (Excel lê como float), retorna direto
+  if(typeof raw === 'number') return raw;
+  const s = String(raw).trim();
+  // Remove R$, espaços, etc.
+  const clean = s.replace(/[R$\s]/g, '');
+  // Formato BR: ponto como milhar, vírgula como decimal → "120.326,47"
+  if(/^\d{1,3}(\.\d{3})*(,\d+)?$/.test(clean)){
+    return parseFloat(clean.replace(/\./g, '').replace(',', '.'));
+  }
+  // Formato US: vírgula como milhar, ponto como decimal → "120,326.47"
+  if(/^\d{1,3}(,\d{3})*(\.\d+)?$/.test(clean)){
+    return parseFloat(clean.replace(/,/g, ''));
+  }
+  // Só vírgula como decimal (sem milhar): "120326,47"
+  if(/^\d+,\d+$/.test(clean)){
+    return parseFloat(clean.replace(',', '.'));
+  }
+  // Fallback direto
+  return parseFloat(clean) || 0;
+}
+
+/**
  * Extrai o valor de "Esta Medição" do cabeçalho.
  *
  * Regra simplificada:
@@ -151,11 +181,11 @@ function findEstaMedicao(rows){
       if(!cell || !RE.test(cell)) continue;
 
       // r+1: linha imediatamente abaixo, mesma coluna
-      const v1 = Number(rows[r + 1]?.[c]);
+      const v1 = parseValor(rows[r + 1]?.[c]);
       if(v1 > 0) return v1;
 
       // r+2: fallback para célula mesclada que pula uma linha
-      const v2 = Number(rows[r + 2]?.[c]);
+      const v2 = parseValor(rows[r + 2]?.[c]);
       if(v2 > 0) return v2;
     }
   }
