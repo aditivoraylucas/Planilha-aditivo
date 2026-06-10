@@ -11,17 +11,32 @@ function detectSheet(wb){
   return wb.SheetNames.at(-1);
 }
 
+/**
+ * Detecta as colunas da planilha pelo rótulo do cabeçalho.
+ *
+ * REGRA GARANTIDA pela planilha:
+ *   - "Esta Medição" / "No Período"  → coluna de Medição
+ *   - "Acumulado"                    → coluna de Acumulado  (sempre após Medição)
+ *   - "Saldo"                        → coluna de Saldo      (sempre após Acumulado)
+ *
+ * Não há fallback por posição numérica — se o rótulo não for encontrado
+ * a coluna fica -1 e o valor importado será 0 (evita atribuição errada).
+ */
 function detectColumns(data){
   const RE_ITEM = /^(item|n[°º\.°]|num\.?|no\.?)$/i;
+
+  // Rótulos aceitos por campo — ordem importa: primeiro match vence
   const RE = {
     desc:  /discrimina|descri[çc]|servic[oa]|servi[çc]|especific|designa/i,
-    // Medição: exige que a célula seja especificamente sobre a medição do período,
-    // NÃO bate em "acumulado", "saldo", etc.
-    med:   /no[\s.]*(per[ií]odo|mes|m[eê]s)|^medic[aã]o$|^realizado$|esta[\s.]*medi[çc]|med\.?\s*atual|med\.?\s*(do\s*)?(per[ií]odo|m[eê]s)|^medi[çc][aã]o\s*(do\s*per[ií]odo)?$/i,
-    // Acumulado: só bate em células que contêm explicitamente "acumulado" ou "acum"
-    acum:  /^acumulado$|\bacumulado\b|^acum\.?$/i,
-    saldo: /saldo/i
+    vc:    null, // tratado via VC_PATTERNS abaixo
+    // Medição: "Esta Medição", "No Período", "No Mes", "Medição", "Realizado", "Med. Atual"
+    med:   /esta[\s.]*medi[çc]|no[\s.]*(per[ií]odo|m[eê]s)|^medic[aã]o$|^realizado$|med\.?\s*atual|^medi[çc][aã]o\s*(do\s*per[ií]odo)?$/i,
+    // Acumulado: célula deve conter exatamente "Acumulado" ou "Acum"
+    acum:  /^acumulado$|^acum\.?$|^\s*acumulado\s*$/i,
+    // Saldo
+    saldo: /^saldo$/i,
   };
+
   const VC_PATTERNS = [
     { pri: 1, re: /valor\s*(unit[aá]r|unit\.)?\b/i },
     { pri: 1, re: /vl\.?\s*unit|vlr\.?\s*unit/i },
@@ -32,6 +47,8 @@ function detectColumns(data){
     { pri: 5, re: /valor\s*ct\s*[\/\\]\s*ta/i },
     { pri: 5, re: /valor\s*(de\s+)?contrato\s*(com\s*)?(aditivo|\bta\b)/i },
   ];
+
+  // 1. Localiza linha de cabeçalho (linha com "Item" / "N°")
   let headerRowIdx = -1, itemCol = -1;
   for(let r = 0; r < Math.min(80, data.length); r++){
     const row = data[r] || [];
@@ -42,6 +59,7 @@ function detectColumns(data){
     }
     if(headerRowIdx >= 0) break;
   }
+  // fallback: primeira linha com número inteiro na col 0
   if(headerRowIdx < 0){
     for(let r = 0; r < Math.min(80, data.length); r++){
       const row = data[r] || [];
@@ -53,25 +71,29 @@ function detectColumns(data){
       if(headerRowIdx >= 0) break;
     }
   }
+
   const cols = { item: itemCol, desc:-1, vc:-1, med:-1, acum:-1, saldo:-1 };
-  let vcPri = -1;
   if(headerRowIdx < 0) return cols;
+
+  // 2. Varre bloco de cabeçalho (até 4 linhas acima + a linha do header)
+  let vcPri = -1;
   const blockStart = Math.max(0, headerRowIdx - 4);
-  const headerBlock = [];
   for(let r = blockStart; r <= headerRowIdx; r++){
     const row = data[r] || [];
+    // pula linhas de dados que entraram no bloco por engano
     if(r < headerRowIdx && /^\d+$/.test(String(row[itemCol]??'').trim())) continue;
-    headerBlock.push(row);
-  }
-  for(const row of headerBlock){
     for(let c = 0; c < row.length; c++){
+      if(c === itemCol) continue;
       const t = norm(row[c]);
-      if(!t || c === itemCol) continue;
-      if(RE.desc.test(t)  && cols.desc  < 0) cols.desc  = c;
-      // Acumulado tem prioridade: testa ANTES de med para não colidir
+      if(!t) continue;
+
+      if(RE.desc.test(t)  && cols.desc  < 0){ cols.desc  = c; continue; }
+
+      // acum ANTES de med: evita que "Acumulado" bata no regex de Medição
       if(RE.acum.test(t)  && cols.acum  < 0){ cols.acum  = c; continue; }
-      if(RE.med.test(t)   && cols.med   < 0) cols.med   = c;
-      if(RE.saldo.test(t) && cols.saldo < 0) cols.saldo = c;
+      if(RE.med.test(t)   && cols.med   < 0){ cols.med   = c; continue; }
+      if(RE.saldo.test(t) && cols.saldo < 0){ cols.saldo = c; continue; }
+
       for(const {pri, re} of VC_PATTERNS){
         if(re.test(t)){
           if(pri >= vcPri){ cols.vc = c; vcPri = pri; }
@@ -80,17 +102,9 @@ function detectColumns(data){
       }
     }
   }
-  const firstDataRow = data[headerRowIdx + 1] || [];
-  const missing = ['vc','med','acum','saldo'].filter(k => cols[k] < 0);
-  if(missing.length > 0){
-    const usedCols = new Set(Object.values(cols).filter(v => v >= 0));
-    const numCols = [];
-    for(let c = (itemCol >= 0 ? itemCol : 0) + 1; c < firstDataRow.length; c++){
-      if(!usedCols.has(c) && isNum(firstDataRow[c]) && Number(firstDataRow[c]) > 0) numCols.push(c);
-    }
-    // Ordem esperada na planilha: vc → med → acum → saldo
-    missing.forEach((k, i) => { if(numCols[i] !== undefined) cols[k] = numCols[i]; });
-  }
+
+  // 3. Descrição: se não encontrada pelo rótulo, busca primeira célula
+  //    textual antes da coluna de Valor Contrato
   if(cols.desc < 0 && itemCol >= 0){
     const fdr = data[headerRowIdx + 1] || [];
     const vcLimit = cols.vc > 0 ? cols.vc : itemCol + 12;
@@ -98,6 +112,9 @@ function detectColumns(data){
       if(!isNum(fdr[c]) && String(fdr[c]??'').trim()){ cols.desc = c; break; }
     }
   }
+
+  // SEM fallback numérico — se uma coluna não foi encontrada pelo rótulo
+  // ela permanece -1 e o valor importado será 0 (correto e previsível).
   return cols;
 }
 
@@ -166,21 +183,17 @@ function parseValor(raw){
  */
 function findEstaMedicao(rows){
   const RE = /esta[\s.]*medi[çc]|última[\s.]*medi[çc]|medi[çc][aã]o[\s.]*atual|valor[\s.]*desta[\s.]*medi[çc]/i;
-
   for(let r = 0; r < rows.length; r++){
     const row = rows[r] || [];
     for(let c = 0; c < row.length; c++){
       const cell = String(row[c] ?? '').trim();
       if(!cell || !RE.test(cell)) continue;
-
       const v1 = parseValor(rows[r + 1]?.[c]);
       if(v1 > 0) return v1;
-
       const v2 = parseValor(rows[r + 2]?.[c]);
       if(v2 > 0) return v2;
     }
   }
-
   return 0;
 }
 
