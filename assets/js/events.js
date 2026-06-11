@@ -41,8 +41,9 @@ export async function importFile(replace=false){
 
       if(replace){
         const existente=currentObra();
-        if(existente?.cronograma) obra.cronograma = existente.cronograma;
-        if(existente?.dataInicio) obra.dataInicio  = existente.dataInicio;
+        if(existente?.cronograma)   obra.cronograma   = existente.cronograma;
+        if(existente?.dataInicio)   obra.dataInicio    = existente.dataInicio;
+        if(existente?.dataEmissao)  obra.dataEmissao   = existente.dataEmissao;
       }
 
       await saveObra(obra);
@@ -65,10 +66,13 @@ export async function importCronograma(){
     try{
       const buf=await file.arrayBuffer();
       const wb=XLSX.read(buf,{type:'array'});
-      const { cronograma, totalMeses } = parseCronogramaXLSX(wb);
-      o.cronograma=cronograma;
+      const { cronograma, totalMeses, dataEmissao } = parseCronogramaXLSX(wb);
+      o.cronograma  = cronograma;
+      // Salva dataEmissao (apenas mes e ano) para uso na Curva S
+      if(dataEmissao) o.dataEmissao = { mes: dataEmissao.mes, ano: dataEmissao.ano };
       await saveObra(o);
-      showToast(`✅ Cronograma importado: ${totalMeses} meses.`);
+      const emissaoTxt = dataEmissao ? ` | Emissão: ${String(dataEmissao.mes).padStart(2,'0')}/${dataEmissao.ano}` : '';
+      showToast(`✅ Cronograma importado: ${totalMeses} meses${emissaoTxt}.`);
       renderCronogramaBox();
       updateDashboard();
     } catch(err){ showToast('❌ '+err.message,true); console.error(err); }

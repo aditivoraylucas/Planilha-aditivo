@@ -49,43 +49,38 @@ export function cleanup(adminSubs, allUsers){
 
 /* ── Cronograma Físico-Financeiro ── */
 /**
- * Dado dataInicio (string 'YYYY-MM-DD') e o array cronograma da obra,
- * retorna array de { label, planejadoPct, planejadoValor, passado }.
+ * buildCronogramaTimeline(dataInicio, cronograma, dataEmissao?)
  *
- * REGRA DE LABEL (alinhado ao mês de término):
- *   offset = m → label representa o mês de ENCERRAMENTO do período.
- *   O último label sempre coincide com o mês do Término Previsto.
- *
- *   Exemplo: início 17/03/2025, 18 meses
- *     m=1  → abr/25  |  m=18 → set/26 (= Término 17/09/2026) ✔
- *
- * REGRA "HOJE" (passado):
- *   Como os labels estão deslocados +1 em relação ao período real,
- *   usamos m <= mesesDecorridos (sem +1) para que a linha Hoje
- *   caia no label correto (mês atual).
- *
- *   Exemplo hoje = jun/26, início = mar/25:
- *     mesesDecorridos = (2026-2025)*12 + (6-3) = 15
- *     passado = m <= 15  → último passado é m=15, label = (3-1+15)%12+1 = 18%12+1 = 7 = jun ✔
+ * dataEmissao (opcional): { mes, ano } extraído da planilha.
+ *   - Se fornecido, o mês de referência do "Hoje" é dataEmissao.mes/dataEmissao.ano.
+ *   - Apenas mês e ano importam; o dia é ignorado.
+ *   - Ex: dataEmissao 29/03/2026 → referência = mês 3 de 2026.
+ *   - Fallback: mês/ano atual do sistema.
  */
-export function buildCronogramaTimeline(dataInicio, cronograma){
+export function buildCronogramaTimeline(dataInicio, cronograma, dataEmissao){
   if(!dataInicio || !Array.isArray(cronograma) || !cronograma.length) return [];
 
   const [iniAno, iniMes] = dataInicio.split('-').map(Number);
 
-  const now     = new Date();
-  const hojeAno = now.getFullYear();
-  const hojeMes = now.getMonth() + 1;
+  // Referência do "Hoje": dataEmissao da planilha (apenas mês/ano) ou sistema
+  let refAno, refMes;
+  if(dataEmissao && dataEmissao.mes && dataEmissao.ano){
+    refMes = dataEmissao.mes;
+    refAno = dataEmissao.ano;
+  } else {
+    const now = new Date();
+    refMes = now.getMonth() + 1;
+    refAno = now.getFullYear();
+  }
 
   const mesesDecorridos = Math.max(0,
-    (hojeAno - iniAno) * 12 + (hojeMes - iniMes)
+    (refAno - iniAno) * 12 + (refMes - iniMes)
   );
 
   const totalMeses = cronograma.length;
   const result = [];
 
   for(let m = 1; m <= totalMeses; m++){
-    // offset = m: label = mês de encerramento do período m
     const totalMesBase0 = (iniMes - 1) + m;
     const slotAno  = iniAno + Math.floor(totalMesBase0 / 12);
     const slotMes  = (totalMesBase0 % 12) + 1;
@@ -98,7 +93,6 @@ export function buildCronogramaTimeline(dataInicio, cronograma){
       label,
       planejadoPct:   entry ? +Number(entry.planejadoPct).toFixed(2)   : 0,
       planejadoValor: entry ? +Number(entry.planejadoValor).toFixed(2) : 0,
-      // sem +1: compensa o deslocamento de label para que "Hoje" caia no mês correto
       passado: m <= mesesDecorridos
     });
   }
