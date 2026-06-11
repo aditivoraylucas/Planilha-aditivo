@@ -16,14 +16,22 @@ function fmtDate(str){
   const d = new Date(str + 'T00:00:00');
   return isNaN(d) ? str : d.toLocaleDateString('pt-BR');
 }
+
+/**
+ * Calcula a data de término da obra.
+ * REGRA: o DIA do término é sempre igual ao DIA do início.
+ * Apenas o mês e o ano avançam conforme o total de meses do cronograma.
+ */
 function calcDataFim(dataInicio, totalMeses){
   if(!dataInicio || !totalMeses) return null;
-  const [ano, mes] = dataInicio.split('-').map(Number);
-  const totalMes   = mes - 1 + totalMeses;
-  const fimAno     = ano + Math.floor(totalMes / 12);
-  const fimMes     = (totalMes % 12) + 1;
-  const d = new Date(fimAno, fimMes - 1, 0);
-  return d.toISOString().slice(0, 10);
+  const [ano, mes, dia] = dataInicio.split('-').map(Number);
+  const totalMes = mes - 1 + totalMeses;          // meses totais a partir de jan
+  const fimAno   = ano + Math.floor(totalMes / 12);
+  const fimMes   = (totalMes % 12) + 1;           // 1-based
+  // Garante que o dia não ultrapasse o último dia do mês de término
+  const ultimoDia = new Date(fimAno, fimMes, 0).getDate();
+  const fimDia    = Math.min(dia, ultimoDia);
+  return `${fimAno}-${String(fimMes).padStart(2,'0')}-${String(fimDia).padStart(2,'0')}`;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -93,7 +101,6 @@ export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData, data
   const planTotal = planData[planData.length-1] || 100;
   const realData  = timeline.map((t,i)=>{
     if(!t.passado) return null;
-    // peso: quanto do planejado já deveria ter sido feito até este mês
     const pesoAcum = planTotal > 0 ? planData[i] / planTotal : (i+1)/timeline.length;
     return +Math.min(realPctGeral * (pesoAcum > 0 ? 1 : 0) + realPctGeral*(1-pesoAcum)*0, 100).toFixed(2);
   });
@@ -110,8 +117,6 @@ export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData, data
   const hojeIdx = timeline.reduce((last,t,i)=> t.passado ? i : last, -1);
 
   // Área de desvio: dataset de preenchimento entre planejado e executado
-  // Positivo (adiantado) = executado > planejado → verde
-  // Negativo (atrasado)  = executado < planejado → vermelho
   const desvioData = timeline.map((t,i)=>{
     if(realDataFinal[i] === null) return null;
     return +( realDataFinal[i] - planData[i] ).toFixed(2);
@@ -135,7 +140,6 @@ export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData, data
       ctx.setLineDash([5,4]);
       ctx.stroke();
       ctx.setLineDash([]);
-      // Badge "Hoje"
       const label   = 'Hoje';
       const padding = 4;
       ctx.font      = `bold ${mobile?9:11}px sans-serif`;
@@ -169,7 +173,6 @@ export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData, data
     ctx.closePath();
   }
 
-  // Determina cor da área de desvio no mês atual
   const desvioHoje = hojeIdx >= 0 ? (desvioData[hojeIdx] ?? 0) : 0;
   const desvioColor     = desvioHoje >= 0
     ? (dark ? 'rgba(52,211,153,0.18)' : 'rgba(16,185,129,0.15)')
@@ -177,7 +180,6 @@ export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData, data
   const desvioBorder    = desvioHoje >= 0 ? 'rgba(16,185,129,0)' : 'rgba(239,68,68,0)';
 
   const datasets = [
-    // 1. Área de desvio (fundo)
     {
       type:'line', label: desvioHoje >= 0 ? 'Adiantamento' : 'Atraso',
       data: desvioData.map((v,i)=> v !== null ? planData[i] : null),
@@ -187,7 +189,6 @@ export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData, data
       pointRadius: 0, tension: 0.35, order: 3,
       spanGaps: false
     },
-    // 2. Executado Real
     {
       type:'line', label:'Executado Real (%)',
       data: realDataFinal,
@@ -196,7 +197,6 @@ export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData, data
       pointBackgroundColor:'#10b981',
       tension: 0.35, fill: false, spanGaps: false, order: 1
     },
-    // 3. Planejado (por cima)
     {
       type:'line', label:'Planejado (%)',
       data: planData,
@@ -235,14 +235,14 @@ export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData, data
             pointStyleWidth: 10,
             filter: item => item.text !== 'Adiantamento' && item.text !== 'Atraso'
               ? true
-              : (hojeIdx >= 0)  // só mostra legenda de desvio se tiver meses passados
+              : (hojeIdx >= 0)
           }
         },
         tooltip:{
           callbacks:{
             title: items => `📅 ${items[0].label}`,
             label: item => {
-              if(item.datasetIndex === 0) return null; // oculta área de desvio no tooltip
+              if(item.datasetIndex === 0) return null;
               const v = item.parsed.y;
               if(v === null || v === undefined) return null;
               const prefix = item.datasetIndex === 1 ? '🟢 Executado' : '🟡 Planejado';
@@ -307,12 +307,10 @@ export function renderCronogramaBox(){
   }
   const temCrono = Array.isArray(o.cronograma) && o.cronograma.length > 0;
   const totalMeses = temCrono ? o.cronograma.length : 0;
-  const dataFimStr = temCrono && o.dataInicio ? (() => {
-    const [ano,mes] = o.dataInicio.split('-').map(Number);
-    const tot = mes - 1 + totalMeses;
-    const d = new Date(ano + Math.floor(tot/12), (tot%12), 0);
-    return d.toLocaleDateString('pt-BR');
-  })() : null;
+  // REGRA: dia do término = dia do início
+  const dataFimStr = (temCrono && o.dataInicio)
+    ? fmtDate(calcDataFim(o.dataInicio, totalMeses))
+    : null;
 
   if(temCrono){
     box.innerHTML=
@@ -519,7 +517,7 @@ export function renderAdminDetail(){
     `<div class="admin-stats-grid">
        <div class="stat-card compact"><span class="stat-label" style="${LS}">Contratada</span><span class="stat-value" style="${VSSM}">${esc(contratadaNome)}</span></div>
        <div class="stat-card compact"><span class="stat-label" style="${LS}">Esta Medição</span><span class="stat-value" style="${VS}">${money(estaMed)}</span></div>
-       <div class="stat-card compact"><span class="stat-label" style="${LS}">📅 Início do Contrato</span><span class="stat-value" style="${VS}">${dataInicioStr}</span></div>
+       <div class="stat-card compact"><span class="stat-label" style="${LS}">📅 INÍCIO DA OBRA</span><span class="stat-value" style="${VS}">${dataInicioStr}</span></div>
        <div class="stat-card compact"><span class="stat-label" style="${LS}">🏁 Término Previsto</span><span class="stat-value" style="${VS}">${dataFimStr}</span></div>
        <div class="stat-card compact"><span class="stat-label" style="${LS}">Valor CT / Aditivo</span><span class="stat-value" style="${VS}">${money(vc)}</span></div>
        <div class="stat-card compact"><span class="stat-label" style="${LS}">Acumulado Total</span><span class="stat-value" style="${VS};color:var(--success)">${money(ac)}</span></div>
