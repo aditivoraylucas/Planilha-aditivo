@@ -52,41 +52,14 @@ export function cleanup(adminSubs, allUsers){
  * Dado dataInicio (string 'YYYY-MM-DD') e o array cronograma da obra,
  * retorna array de { label, planejadoPct, planejadoValor, passado }.
  *
- * REGRA DE LABEL:
- *   m=1 → mês de início (offset 0)
- *   m=2 → mês seguinte (offset 1)
- *   ...
- *   m=N → offset N-1
+ * REGRA DE LABEL (alinhado ao mês de término):
+ *   O label de cada período m representa o MÊS DE ENCERRAMENTO daquele período.
+ *   Usando offset = m (em vez de m-1), o último label sempre coincide com
+ *   o mês do Término Previsto exibido no cabeçalho.
  *
- *   Exemplo: início mar/25, 18 meses
- *     m=1  → mar/25   (offset 0)
- *     m=18 → ago/26   ... ERRADO com (m-1)
- *
- *   FIX: slot do mês m ocupa o ESPAÇO entre (m-1) e m meses após o início.
- *   Para exibir o mês correto usamos offset = m-1 mas contamos a partir do
- *   próprio mês de início como posição 0, portanto:
- *     slotBase0 = (iniMes - 1) + (m - 1)   → isso dá ago/26 para m=18, início=mar
- *   O correto é o mês de encerramento do mês m, que é exatamente
- *     slotBase0 = (iniMes - 1) + m          → set/26 para m=18 ✔
- *   mas isso deslocaria o label do mês 1 para abril em vez de março.
- *
- *   Concluão: a convenção correta é manter o label como o mês de INÍCIO
- *   de cada período, portanto m=1 → mar, m=18 → ago.
- *   O que está errado é o TÉRMINO PREVISTO no painel, que deve ser
- *   dataInicio + totalMeses (já corrigido em calcDataFim).
- *   A curva em si exibe corretamente os 18 períodos mensais de mar/25 a ago/26.
- *
- *   PORÉM: o usuário diz que a curva mostra só 17 meses. Isso significa
- *   que maxMes retorna 17 (o último item do array cronograma tem mes=17).
- *   Causa: o cronograma salvo no Firestore está com 18 entradas mas
- *   a última tem mes=18 e o loop for(m=1;m<=maxMes) funciona corretamente.
- *   Portanto o problema é que cronograma.length=18 mas o LOOP usa maxMes
- *   que é max(c.mes). Se o parser salvou mes 1..18 corretamente, maxMes=18
- *   e o loop vai de 1 a 18 = 18 pontos. Se o parser perdeu o último,
- *   maxMes=17 e o gráfico mostra 17 pontos.
- *
- *   FIX DEFINITIVO: usar cronograma.length como totalMeses em vez de maxMes,
- *   garantindo sempre N pontos independente do valor de c.mes.
+ *   Exemplo: início 17/03/2025, 18 meses
+ *     m=1  → abr/25  (encerra em abril)
+ *     m=18 → set/26  (encerra em setembro = Término Previsto 17/09/2026) ✔
  */
 export function buildCronogramaTimeline(dataInicio, cronograma){
   if(!dataInicio || !Array.isArray(cronograma) || !cronograma.length) return [];
@@ -101,18 +74,18 @@ export function buildCronogramaTimeline(dataInicio, cronograma){
     (hojeAno - iniAno) * 12 + (hojeMes - iniMes)
   );
 
-  // USA cronograma.length para garantir N pontos mesmo se c.mes tiver gaps
   const totalMeses = cronograma.length;
   const result = [];
 
   for(let m = 1; m <= totalMeses; m++){
-    const totalMesBase0 = (iniMes - 1) + (m - 1);    // offset 0-based do mês m
+    // offset = m: o label representa o mês de encerramento do período m
+    // assim o último label = mês do Término Previsto
+    const totalMesBase0 = (iniMes - 1) + m;
     const slotAno  = iniAno + Math.floor(totalMesBase0 / 12);
-    const slotMes  = (totalMesBase0 % 12) + 1;        // 1-based
+    const slotMes  = (totalMesBase0 % 12) + 1;
     const slotDate = new Date(slotAno, slotMes - 1, 1);
     const label    = slotDate.toLocaleDateString('pt-BR', { month:'short', year:'2-digit' });
 
-    // Busca pelo índice (m-1) em vez de c.mes para não depender de numeração correta
     const entry = cronograma[m - 1];
     result.push({
       mes: m,
