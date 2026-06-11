@@ -25,10 +25,9 @@ function fmtDate(str){
 function calcDataFim(dataInicio, totalMeses){
   if(!dataInicio || !totalMeses) return null;
   const [ano, mes, dia] = dataInicio.split('-').map(Number);
-  const totalMes = mes - 1 + totalMeses;          // meses totais a partir de jan
+  const totalMes = mes - 1 + totalMeses;
   const fimAno   = ano + Math.floor(totalMes / 12);
-  const fimMes   = (totalMes % 12) + 1;           // 1-based
-  // Garante que o dia não ultrapasse o último dia do mês de término
+  const fimMes   = (totalMes % 12) + 1;
   const ultimoDia = new Date(fimAno, fimMes, 0).getDate();
   const fimDia    = Math.min(dia, ultimoDia);
   return `${fimAno}-${String(fimMes).padStart(2,'0')}-${String(fimDia).padStart(2,'0')}`;
@@ -116,7 +115,7 @@ export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData, data
   // Índice do mês atual (último "passado")
   const hojeIdx = timeline.reduce((last,t,i)=> t.passado ? i : last, -1);
 
-  // Área de desvio: dataset de preenchimento entre planejado e executado
+  // Área de desvio
   const desvioData = timeline.map((t,i)=>{
     if(realDataFinal[i] === null) return null;
     return +( realDataFinal[i] - planData[i] ).toFixed(2);
@@ -124,7 +123,7 @@ export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData, data
 
   const labels = timeline.map(t=>t.label);
 
-  // Plugin personalizado: linha vertical "Hoje" + label
+  // Plugin: linha vertical "Hoje"
   const pluginHoje = {
     id: 'linhaHoje',
     afterDraw(chart){
@@ -174,10 +173,10 @@ export function renderCurvaS(canvasId, wrapId, itens, prev, cronogramaData, data
   }
 
   const desvioHoje = hojeIdx >= 0 ? (desvioData[hojeIdx] ?? 0) : 0;
-  const desvioColor     = desvioHoje >= 0
+  const desvioColor  = desvioHoje >= 0
     ? (dark ? 'rgba(52,211,153,0.18)' : 'rgba(16,185,129,0.15)')
     : (dark ? 'rgba(248,113,113,0.18)' : 'rgba(239,68,68,0.12)');
-  const desvioBorder    = desvioHoje >= 0 ? 'rgba(16,185,129,0)' : 'rgba(239,68,68,0)';
+  const desvioBorder = desvioHoje >= 0 ? 'rgba(16,185,129,0)' : 'rgba(239,68,68,0)';
 
   const datasets = [
     {
@@ -307,7 +306,6 @@ export function renderCronogramaBox(){
   }
   const temCrono = Array.isArray(o.cronograma) && o.cronograma.length > 0;
   const totalMeses = temCrono ? o.cronograma.length : 0;
-  // REGRA: dia do término = dia do início
   const dataFimStr = (temCrono && o.dataInicio)
     ? fmtDate(calcDataFim(o.dataInicio, totalMeses))
     : null;
@@ -339,6 +337,8 @@ import { showToast } from './state.js';
 /* ---- Dashboard do colaborador (painel fixo) ---- */
 export function updateDashboard(){
   const o=currentObra();
+  // Usa o.itens (salvo no Firestore) para a curva S — mesma fonte do admin
+  const itensParaCurva = Array.isArray(o?.itens) && o.itens.length > 0 ? o.itens : state.rows;
   const vc     = Number(o?.resumo?.valorContratoAditivo)||state.rows.reduce((a,r)=>a+Number(r.valorContrato||0),0);
   const ac     = Number(o?.resumo?.acumuladoTotal)     ||state.rows.reduce((a,r)=>a+Number(r.acumulado||0),0);
   const estaMed= Number(o?.resumo?.estaMedicao)        ||state.rows.reduce((a,r)=>a+Number(r.medicao||0),0);
@@ -356,7 +356,7 @@ export function updateDashboard(){
   if($('mainProjName'))       $('mainProjName').textContent      = o?.nomeProjeto||o?.nome||'-';
   if($('mainProjContratada')) $('mainProjContratada').textContent = o?.contratada||'-';
   if($('mainProjScope'))      $('mainProjScope').textContent      = o?.medicaoAtual||'-';
-  state.chartUser=renderCurvaS('sCurveChart','sCurveScrollWrap',state.rows,state.chartUser,o?.cronograma,o?.dataInicio);
+  state.chartUser=renderCurvaS('sCurveChart','sCurveScrollWrap',itensParaCurva,state.chartUser,o?.cronograma,o?.dataInicio);
 }
 
 export function renderObrasBox(){
