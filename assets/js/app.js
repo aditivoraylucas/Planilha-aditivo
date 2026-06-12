@@ -41,13 +41,14 @@ onAuthStateChanged(auth, async user => {
           continue;
         }
         if (!state.adminSubs[uid]) {
-          // P-007: filtra obras com deletedAt no listener do admin
-          const obrasQ = query(
-            collection(db, 'users', uid, 'obras'),
-            where('deletedAt', '==', null)
-          );
+          // P-007: busca todas as obras e filtra soft-delete no cliente
+          // (where deletedAt == null falha para docs sem o campo)
+          const obrasQ = collection(db, 'users', uid, 'obras');
           state.adminSubs[uid] = onSnapshot(obrasQ, obrasSnap => {
-            state.allUsers[uid] = { ...data, obras: obrasSnap.docs.map(d => ({ id: d.id, ...d.data() })) };
+            const obras = obrasSnap.docs
+              .map(d => ({ id: d.id, ...d.data() }))
+              .filter(o => !o.deletedAt);
+            state.allUsers[uid] = { ...data, obras };
             renderAdminViews();
           });
         } else {
@@ -59,16 +60,15 @@ onAuthStateChanged(auth, async user => {
     return;
   }
 
-  // Colaborador: escuta obras sem deletedAt
-  // P-007: where('deletedAt', '==', null) filtra documentos com soft delete
-  // Obras removidas ficam no Firestore mas nunca aparecem na UI
+  // Colaborador: escuta todas as obras e filtra soft-delete no cliente
+  // P-007: where('deletedAt','==',null) não retorna docs sem o campo;
+  // filtramos !o.deletedAt no .map() para garantir compatibilidade retroativa
   showView('appView');
-  const obrasQ = query(
-    collection(db, 'users', user.uid, 'obras'),
-    where('deletedAt', '==', null)
-  );
+  const obrasQ = collection(db, 'users', user.uid, 'obras');
   state.unsubUserObras = onSnapshot(obrasQ, snap => {
-    state.obras = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    state.obras = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(o => !o.deletedAt);
 
     // P-006: tenta restaurar obra ativa da URL; senão usa a primeira
     const obraIdDaUrl = getObraIdDaUrl();
@@ -85,7 +85,7 @@ onAuthStateChanged(auth, async user => {
     if (state.selectedObraId) {
       const obra = state.obras.find(o => o.id === state.selectedObraId);
       if (obra) {
-        applySelected(obra); // também grava o ID na URL
+        applySelected(obra);
       }
     } else {
       setObraIdNaUrl(null);
