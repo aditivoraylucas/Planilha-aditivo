@@ -4,20 +4,19 @@ import { registrarEvento } from './auditoria.js';
 import { setObraIdNaUrl, limparObraIdDaUrl } from './url-state.js';
 import { doc, setDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-// P-007: NUNCA usar deleteDoc em obras — soft delete via deletedAt
 export async function saveObra(obra) {
   await setDoc(doc(db, 'users', state.user.uid, 'obras', obra.id), obra);
 }
 
 export async function deleteObra(id) {
-  const obraRef = doc(db, 'users', state.user.uid, 'obras', id);
+  const obraRef  = doc(db, 'users', state.user.uid, 'obras', id);
   const snapshot = state.obras.find(o => o.id === id) ?? null;
   await updateDoc(obraRef, { deletedAt: serverTimestamp() });
   await registrarEvento({
-    uid:          state.user.uid,
-    entidade:     'obras',
-    docId:        id,
-    acao:         'OBRA_REMOVIDA',
+    uid:           state.user.uid,
+    entidade:      'obras',
+    docId:         id,
+    acao:          'OBRA_REMOVIDA',
     snapshotAntes: snapshot,
   });
 }
@@ -43,11 +42,11 @@ function fmtDate(str) {
 function calcDataFim(dataInicio, totalMeses) {
   if (!dataInicio || !totalMeses) return null;
   const [ano, mes, dia] = dataInicio.split('-').map(Number);
-  const mesBase0  = (mes - 1) + totalMeses;
-  const fimAno    = ano + Math.floor(mesBase0 / 12);
-  const fimMes    = (mesBase0 % 12) + 1;
+  const mesBase0 = (mes - 1) + totalMeses;
+  const fimAno   = ano + Math.floor(mesBase0 / 12);
+  const fimMes   = (mesBase0 % 12) + 1;
   const ultimoDia = new Date(fimAno, fimMes, 0).getDate();
-  const fimDia    = Math.min(dia, ultimoDia);
+  const fimDia   = Math.min(dia, ultimoDia);
   return `${fimAno}-${String(fimMes).padStart(2,'0')}-${String(fimDia).padStart(2,'0')}`;
 }
 
@@ -58,11 +57,11 @@ export function renderCurvaS1(canvasId, wrapId, itens, prevChart) {
   const canvas = $(canvasId); if (!canvas) return prevChart;
   if (prevChart) prevChart.destroy();
 
-  const dark    = document.documentElement.dataset.theme === 'dark';
-  const gc      = dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
-  const tc      = dark ? '#94a3b8' : '#64748b';
-  const mobile  = window.innerWidth <= 900;
-  const wrap    = $(wrapId);
+  const dark   = document.documentElement.dataset.theme === 'dark';
+  const gc     = dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+  const tc     = dark ? '#94a3b8' : '#64748b';
+  const mobile = window.innerWidth <= 900;
+  const wrap   = $(wrapId);
   if (wrap) { wrap.style.overflowX = 'hidden'; canvas.style.minWidth = ''; canvas.style.width = '100%'; }
 
   return new Chart(canvas.getContext('2d'), {
@@ -93,117 +92,96 @@ export function renderCurvaS1(canvasId, wrapId, itens, prevChart) {
 
 /* ============================================================
    CURVA S2 — Cronograma Físico-Financeiro
-   Planejado (contrato) x Executado Real (mensal)
-   Se houver aditivo: continua no mesmo gráfico com linha vertical separadora
+   Planejado (contrato) × Executado Real (mensal)
+   Se houver aditivo: linha adicional com separador vertical
+   NÃO exige dataInicio — usa labels M1…Mn se não houver data
    ============================================================ */
 export function renderCurvaS2(canvasId, wrapId, obra, prevChart) {
   const canvas = $(canvasId); if (!canvas) return prevChart;
-  if (prevChart) prevChart.destroy();
+  if (prevChart) { try { prevChart.destroy(); } catch(_){} }
 
   const dark   = document.documentElement.dataset.theme === 'dark';
   const gc     = dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
   const tc     = dark ? '#94a3b8' : '#64748b';
   const mobile = window.innerWidth <= 900;
   const wrap   = $(wrapId);
-  if (wrap) { wrap.style.overflowX = 'auto'; }
+  if (wrap) wrap.style.overflowX = 'auto';
 
-  const temContrato  = Array.isArray(obra?.cronograma) && obra.cronograma.length > 0;
-  const temMensal    = Array.isArray(obra?.cronogramaExecucao) && obra.cronogramaExecucao.length > 0;
-  const temAditivo   = Array.isArray(obra?.cronogramaAditivo) && obra.cronogramaAditivo.length > 0;
-  const dataInicio   = obra?.dataInicio || null;
+  const crono1     = Array.isArray(obra?.cronograma)         ? obra.cronograma         : [];
+  const execMensal = Array.isArray(obra?.cronogramaExecucao) ? obra.cronogramaExecucao : [];
+  const crono2     = Array.isArray(obra?.cronogramaAditivo)  ? obra.cronogramaAditivo  : [];
 
-  if (!temContrato || !temMensal || !dataInicio) {
-    // sem dados suficientes: mostra mensagem no canvas
-    if (prevChart) prevChart.destroy();
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = tc;
-    ctx.font = `${mobile ? 12 : 14}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillText(
-      'Importe o Cronograma do Contrato e o Cronograma Mensal para exibir a Curva S.',
-      canvas.width / 2, canvas.height / 2
-    );
-    return null;
-  }
-
-  // --- monta timeline unificada: contrato + aditivo (se houver) ---
-  const crono1 = obra.cronograma;                                      // contrato
-  const crono2 = temAditivo ? obra.cronogramaAditivo : [];             // aditivo
-  const nContrato = crono1.length;
-  const nAditivo  = crono2.length;
+  const nContrato  = crono1.length;
+  const nAditivo   = crono2.length;
   const totalMeses = nContrato + nAditivo;
 
-  // Labels de mês/ano
+  // --- Labels: usa data se disponível, senão M1…Mn ---
   function labelMes(dataInicio, offset) {
+    if (!dataInicio) return `M${offset}`;
     const [iniAno, iniMes] = dataInicio.split('-').map(Number);
-    const base0  = (iniMes - 1) + offset;
-    const ano    = iniAno + Math.floor(base0 / 12);
-    const mes    = (base0 % 12) + 1;
+    const base0 = (iniMes - 1) + offset;
+    const ano   = iniAno + Math.floor(base0 / 12);
+    const mes   = (base0 % 12) + 1;
     return new Date(ano, mes - 1, 1).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
   }
 
+  const dataInicio        = obra?.dataInicio        || null;
+  const dataInicioAditivo = obra?.dataInicioAditivo || dataInicio;
+
   const labels = [];
   for (let i = 1; i <= nContrato; i++) labels.push(labelMes(dataInicio, i));
-  // aditivo continua do mês seguinte ao fim do contrato
-  const dataInicioAditivo = obra.dataInicioAditivo || dataInicio;
-  for (let i = 1; i <= nAditivo; i++) labels.push(labelMes(dataInicioAditivo, nContrato + i));
+  for (let i = 1; i <= nAditivo;  i++) labels.push(labelMes(dataInicioAditivo, nContrato + i));
 
-  // --- Planejado acumulado ---
+  // --- Planejado acumulado — Contrato ---
   const planData = [];
   let acumPlan = 0;
   for (let i = 0; i < nContrato; i++) {
-    acumPlan += Number(crono1[i].planejadoPct) || 0;
+    acumPlan += Number(crono1[i]?.planejadoPct) || 0;
     planData.push(+Math.min(acumPlan, 100).toFixed(2));
   }
-  // no segmento do aditivo a linha planejada do contrato vira null (encerra)
-  // e começa nova linha planejada do aditivo
-  const planAditivoData = new Array(nContrato).fill(null);
-  let acumPlanAd = 0;
-  for (let i = 0; i < nAditivo; i++) {
-    acumPlanAd += Number(crono2[i].planejadoPct) || 0;
-    planAditivoData.push(+Math.min(acumPlanAd, 100).toFixed(2));
+
+  // --- Planejado acumulado — Aditivo (segmento após contrato) ---
+  const planAditivoData = nAditivo > 0 ? new Array(nContrato).fill(null) : null;
+  if (planAditivoData) {
+    let acumPlanAd = 0;
+    for (let i = 0; i < nAditivo; i++) {
+      acumPlanAd += Number(crono2[i]?.planejadoPct) || 0;
+      planAditivoData.push(+Math.min(acumPlanAd, 100).toFixed(2));
+    }
   }
 
-  // --- Executado acumulado (cronograma mensal) ---
+  // --- Executado acumulado ---
   const execData = new Array(totalMeses).fill(null);
   let acumExec = 0;
-  for (let i = 0; i < obra.cronogramaExecucao.length && i < totalMeses; i++) {
-    acumExec += Number(obra.cronogramaExecucao[i].executadoPct) || 0;
+  for (let i = 0; i < execMensal.length && i < totalMeses; i++) {
+    acumExec += Number(execMensal[i]?.executadoPct) || 0;
     execData[i] = +Math.min(acumExec, 100).toFixed(2);
   }
 
-  // índice de separação contrato/aditivo
-  const separadorIdx = temAditivo ? nContrato - 1 : -1;
-
-  // Plugin: linha vertical separando contrato e aditivo
+  // --- Plugin: linha vertical separando Contrato / Aditivo ---
+  const separadorIdx = nAditivo > 0 ? nContrato - 1 : -1;
   const pluginSeparador = {
     id: 'separadorAditivo',
     afterDraw(chart) {
       if (separadorIdx < 0) return;
       const { ctx, chartArea: { top, bottom }, scales: { x } } = chart;
-      const xPos = x.getPixelForValue(separadorIdx) + (x.getPixelForValue(1) - x.getPixelForValue(0)) / 2;
+      const pxA = x.getPixelForValue(separadorIdx);
+      const pxB = x.getPixelForValue(separadorIdx + 1);
+      const xPos = (pxA + pxB) / 2;
       ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(xPos, top);
-      ctx.lineTo(xPos, bottom);
-      ctx.lineWidth   = 2;
+      ctx.beginPath(); ctx.moveTo(xPos, top); ctx.lineTo(xPos, bottom);
+      ctx.lineWidth = 2;
       ctx.strokeStyle = dark ? 'rgba(251,191,36,0.7)' : 'rgba(217,119,6,0.7)';
-      ctx.setLineDash([6, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      const label   = 'Aditivo';
-      ctx.font      = `bold ${mobile ? 9 : 11}px sans-serif`;
-      const tw      = ctx.measureText(label).width;
-      const bw      = tw + 8;
-      const bh      = mobile ? 14 : 18;
-      const bx      = xPos + 4;
-      const by      = top + 4;
+      ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]);
+      const label = 'Aditivo';
+      ctx.font = `bold ${mobile ? 9 : 11}px sans-serif`;
+      const tw = ctx.measureText(label).width;
+      const bw = tw + 8; const bh = mobile ? 14 : 18;
+      const bx = xPos + 4; const by = top + 4;
       ctx.fillStyle = dark ? 'rgba(217,119,6,0.85)' : 'rgba(251,191,36,0.9)';
       ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 4); ctx.fill();
       ctx.fillStyle = dark ? '#fff' : '#1e293b';
-      ctx.textAlign    = 'left';
-      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.fillText(label, bx + 4, by + bh / 2);
       ctx.restore();
     }
@@ -211,20 +189,19 @@ export function renderCurvaS2(canvasId, wrapId, obra, prevChart) {
 
   const datasets = [
     {
-      type: 'line', label: 'Planejado — Contrato (%)',
+      type: 'line', label: 'Planejado \u2014 Contrato (%)',
       data: planData,
       borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.06)',
       borderWidth: 2.5, pointRadius: mobile ? 2 : 3,
       pointBackgroundColor: '#f59e0b',
       tension: 0.35, fill: false, spanGaps: false, order: 0
     },
-    ...(temAditivo ? [{
-      type: 'line', label: 'Planejado — Aditivo (%)',
+    ...(planAditivoData ? [{
+      type: 'line', label: 'Planejado \u2014 Aditivo (%)',
       data: planAditivoData,
       borderColor: '#fb923c', backgroundColor: 'rgba(251,146,60,0.06)',
       borderWidth: 2.5, borderDash: [5, 3],
-      pointRadius: mobile ? 2 : 3,
-      pointBackgroundColor: '#fb923c',
+      pointRadius: mobile ? 2 : 3, pointBackgroundColor: '#fb923c',
       tension: 0.35, fill: false, spanGaps: false, order: 1
     }] : []),
     {
@@ -269,19 +246,19 @@ export function renderCurvaS2(canvasId, wrapId, obra, prevChart) {
               return ` ${item.dataset.label}: ${Number(v).toFixed(1)}%`;
             },
             afterBody: items => {
-              const plan  = items.find(i => i.datasetIndex === 0)?.parsed.y;
-              const exec  = items.find(i => i.dataset.label?.startsWith('Executado'))?.parsed.y;
+              const plan = items.find(i => i.datasetIndex === 0)?.parsed.y;
+              const exec = items.find(i => i.dataset.label?.startsWith('Executado'))?.parsed.y;
               if (plan == null || exec == null) return [];
-              const dev = +(exec - plan).toFixed(1);
+              const dev  = +(exec - plan).toFixed(1);
               const icon = dev >= 0 ? '\u2705' : '\u26a0\ufe0f';
               const txt  = dev >= 0 ? `Adiantado ${dev}%` : `Atrasado ${Math.abs(dev)}%`;
               return ['\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500', ` ${icon} ${txt}`];
             }
           },
           backgroundColor: dark ? '#1e293b' : '#fff',
-          titleColor:       dark ? '#f8fafc' : '#0f172a',
-          bodyColor:        dark ? '#94a3b8' : '#475569',
-          borderColor:      dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+          titleColor:      dark ? '#f8fafc' : '#0f172a',
+          bodyColor:       dark ? '#94a3b8' : '#475569',
+          borderColor:     dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
           borderWidth: 1, padding: 10, cornerRadius: 8
         }
       }
@@ -289,7 +266,7 @@ export function renderCurvaS2(canvasId, wrapId, obra, prevChart) {
   });
 }
 
-// Compat: mantém renderCurvaS exportado para o painel admin (usa a antiga lógica de barras)
+// Compat alias
 export function renderCurvaS(canvasId, wrapId, itens, prev) {
   return renderCurvaS1(canvasId, wrapId, itens, prev);
 }
@@ -333,7 +310,7 @@ export function renderCronogramaBox() {
   if (temCrono) {
     box.innerHTML =
       `<div style="font-size:.8rem;color:var(--text-muted)">\ud83d\udcca <strong style="color:var(--text)">${totalMeses} meses</strong> importados</div>
-       ${dataFimStr ? `<div style="font-size:.75rem;color:var(--text-muted)">\ud83c\udfc1 Término previsto: <strong>${dataFimStr}</strong></div>` : ''}
+       ${dataFimStr ? `<div style="font-size:.75rem;color:var(--text-muted)">\ud83c\udfc1 T\u00e9rmino previsto: <strong>${dataFimStr}</strong></div>` : ''}
        <button id="removeCronogramaBtn" class="btn btn-danger" style="width:100%;margin-top:.5rem;font-size:.8rem">\ud83d\uddd1 Remover</button>`;
   } else {
     box.innerHTML = '<p style="color:var(--text-muted);font-size:.8rem">Nenhum cronograma importado.</p>';
@@ -379,7 +356,7 @@ export function renderCronogramaAditivoBox() {
   if (temAditivo) {
     box.innerHTML =
       `<div style="font-size:.8rem;color:var(--text-muted)">\ud83d\udccb <strong style="color:var(--text)">${totalMeses} meses</strong> importados</div>
-       ${dataFimStr ? `<div style="font-size:.75rem;color:var(--text-muted)">\ud83c\udfc1 Término do aditivo: <strong>${dataFimStr}</strong></div>` : '' }
+       ${dataFimStr ? `<div style="font-size:.75rem;color:var(--text-muted)">\ud83c\udfc1 T\u00e9rmino do aditivo: <strong>${dataFimStr}</strong></div>` : ''}
        <button id="removeCronogramaAditivoBtn" class="btn btn-danger" style="width:100%;margin-top:.5rem;font-size:.8rem">\ud83d\uddd1 Remover</button>`;
   } else {
     box.innerHTML = '<p style="color:var(--text-muted);font-size:.8rem">Nenhum aditivo importado.</p>';
@@ -394,7 +371,7 @@ export function renderCronogramaAditivoBox() {
 }
 
 export function updateDashboard() {
-  const o = currentObra();
+  const o     = currentObra();
   const itens = Array.isArray(o?.itens) && o.itens.length > 0 ? o.itens : state.rows;
   const vc      = Number(o?.resumo?.valorContratoAditivo) || itens.reduce((a,r)=>a+Number(r.valorContrato||0),0);
   const ac      = Number(o?.resumo?.acumuladoTotal)       || itens.reduce((a,r)=>a+Number(r.acumulado||0),0);
@@ -417,15 +394,20 @@ export function updateDashboard() {
   // Curva S1 — barras por item
   state.chartUser = renderCurvaS1('sCurveChart', 'sCurveScrollWrap', itens, state.chartUser);
 
-  // Curva S2 — planejado x executado real (só exibe se tiver contrato + mensal)
-  const temCrono  = Array.isArray(o?.cronograma) && o.cronograma.length > 0;
+  // Curva S2 — só exibe quando tiver contrato + mensal importados
+  const temCrono  = Array.isArray(o?.cronograma)         && o.cronograma.length         > 0;
   const temMensal = Array.isArray(o?.cronogramaExecucao) && o.cronogramaExecucao.length > 0;
   const panelS2   = $('sCurveAditivoPanel');
-  if (panelS2) panelS2.style.display = (temCrono && temMensal) ? '' : 'none';
+
   if (temCrono && temMensal) {
-    state.chartUser2 = renderCurvaS2('sCurveAditivoChart', 'sCurveAditivoScrollWrap', o, state.chartUser2);
+    if (panelS2) panelS2.style.display = '';
+    // usa rAF para garantir que o canvas tenha dimensões antes do Chart
+    requestAnimationFrame(() => {
+      state.chartUser2 = renderCurvaS2('sCurveAditivoChart', 'sCurveAditivoScrollWrap', o, state.chartUser2);
+    });
   } else {
-    if (state.chartUser2) { state.chartUser2.destroy(); state.chartUser2 = null; }
+    if (panelS2) panelS2.style.display = 'none';
+    if (state.chartUser2) { try { state.chartUser2.destroy(); } catch(_){} state.chartUser2 = null; }
   }
 }
 
@@ -552,9 +534,9 @@ export function adminObraCardHTML(obra) {
   const vc = Number(obra.resumo?.valorContratoAditivo) || it.reduce((a,i)=>a+Number(i.valorContrato||0),0);
   const ac = Number(obra.resumo?.acumuladoTotal)       || it.reduce((a,i)=>a+Number(i.acumulado||0),0);
   const p  = calcPctGeral(obra.resumo, it);
-  const temCrono   = Array.isArray(obra.cronograma) && obra.cronograma.length > 0;
+  const temCrono   = Array.isArray(obra.cronograma)         && obra.cronograma.length         > 0;
   const temMensal  = Array.isArray(obra.cronogramaExecucao) && obra.cronogramaExecucao.length > 0;
-  const temAditivo = Array.isArray(obra.cronogramaAditivo) && obra.cronogramaAditivo.length > 0;
+  const temAditivo = Array.isArray(obra.cronogramaAditivo)  && obra.cronogramaAditivo.length  > 0;
   return `<div class="obra-card" style="cursor:pointer" onclick="adminSelectObra('${obra.id}')">
     <div class="obra-card-header">
       <div><div class="obra-card-title">${esc(obra.nome || 'Sem nome')}</div>
@@ -568,7 +550,7 @@ export function adminObraCardHTML(obra) {
 
 export function renderAdminDetail() {
   const panel = $('adminDetailPanel'); if (!panel) return;
-  if (state.chartAdmin2) { state.chartAdmin2.destroy(); state.chartAdmin2 = null; }
+  if (state.chartAdmin2) { try { state.chartAdmin2.destroy(); } catch(_){} state.chartAdmin2 = null; }
   if (!state.adminSelectedUid) { panel.innerHTML = '<p style="color:var(--text-muted);padding:1rem">Selecione um colaborador ao lado.</p>'; return; }
   const u = state.allUsers[state.adminSelectedUid];
   if (!u) { panel.innerHTML = ''; return; }
@@ -592,12 +574,12 @@ export function renderAdminDetail() {
   const estaMed = Number(obra.resumo?.estaMedicao)          || it.reduce((a,i)=>a+Number(i.medicao||0),0);
   const p       = calcPctGeral(obra.resumo, it);
   const saldo   = vc - ac;
-  const dataInicioStr  = fmtDate(obra.dataInicio);
-  const totalMeses     = Array.isArray(obra.cronograma) ? obra.cronograma.length : 0;
-  const dataFimISO     = calcDataFim(obra.dataInicio, totalMeses);
-  const dataFimStr     = dataFimISO ? fmtDate(dataFimISO) : '-';
-  const temMensal      = Array.isArray(obra.cronogramaExecucao) && obra.cronogramaExecucao.length > 0;
-  const temCrono       = Array.isArray(obra.cronograma) && obra.cronograma.length > 0;
+  const dataInicioStr = fmtDate(obra.dataInicio);
+  const totalMeses    = Array.isArray(obra.cronograma) ? obra.cronograma.length : 0;
+  const dataFimISO    = calcDataFim(obra.dataInicio, totalMeses);
+  const dataFimStr    = dataFimISO ? fmtDate(dataFimISO) : '-';
+  const temMensal     = Array.isArray(obra.cronogramaExecucao) && obra.cronogramaExecucao.length > 0;
+  const temCrono      = Array.isArray(obra.cronograma)         && obra.cronograma.length         > 0;
   const LS   = 'font-size:.7rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted)';
   const VS   = 'font-size:.95rem;font-weight:700;margin-top:.15rem';
   const VSSM = 'font-size:.82rem;font-weight:700;margin-top:.15rem;word-break:break-word';
