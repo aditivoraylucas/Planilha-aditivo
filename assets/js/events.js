@@ -6,8 +6,8 @@ import { readExcelFile, normalizeRows } from './excel.js';
 import {
   saveObra, deleteObra, scheduleSave, currentObra,
   renderAll, renderCurvaS1, renderCurvaS2, applySelected, setImportFileFn,
-  updateDashboard, renderCronogramaBox, renderCronogramaAditivoBox,
-  renderCronogramaMensalBox,
+  updateDashboard, renderCronogramaBox, renderCronogramaMensalBox,
+  renderAditivosSection,
   renderAdminViews, renderAdminDetail, renderColabList, renderAdminSidebar
 } from './render.js';
 import { parseCronogramaXLSX } from './cronograma.js';
@@ -44,6 +44,9 @@ export function importFile(replace=false){
         if(existente?.dataInicio)         obra.dataInicio         = existente.dataInicio;
         if(existente?.dataEmissao)        obra.dataEmissao        = existente.dataEmissao;
         if(existente?.cronogramaExecucao) obra.cronogramaExecucao = existente.cronogramaExecucao;
+        // preserva array de aditivos
+        if(existente?.aditivos)           obra.aditivos           = existente.aditivos;
+        // compat legado
         if(existente?.cronogramaAditivo)  obra.cronogramaAditivo  = existente.cronogramaAditivo;
         if(existente?.dataInicioAditivo)  obra.dataInicioAditivo  = existente.dataInicioAditivo;
         if(existente?.dataEmissaoAditivo) obra.dataEmissaoAditivo = existente.dataEmissaoAditivo;
@@ -53,7 +56,7 @@ export function importFile(replace=false){
       showToast(`\u2705 ${rows.length} itens importados`);
     } catch(err){ showToast('\u274c '+err.message,true); console.error(err); }
   };
-  input.click(); // sempre sinóncrono, sem await antes
+  input.click();
 }
 
 export function importCronograma(){
@@ -108,9 +111,10 @@ export function importCronogramaMensal(){
   input.click();
 }
 
-export function importCronogramaAditivo(){
+/* ── Importa cronograma PREVISTO de um aditivo específico ── */
+export function importCronogramaPrevistoAditivo(aditivoId){
   const o=currentObra();
-  if(!o){ showToast('\u26a0\ufe0f Selecione uma obra antes de importar o cronograma de aditivo.',true); return; }
+  if(!o||!aditivoId){ showToast('\u26a0\ufe0f Obra ou aditivo não encontrado.',true); return; }
   const input=document.createElement('input');
   input.type='file';
   input.accept='.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
@@ -121,17 +125,87 @@ export function importCronogramaAditivo(){
       const buf=await file.arrayBuffer();
       const wb=XLSX.read(buf,{type:'array'});
       const { cronograma, totalMeses, dataEmissao } = parseCronogramaXLSX(wb);
-      o.cronogramaAditivo = cronograma;
-      if(dataEmissao) o.dataEmissaoAditivo = { mes: dataEmissao.mes, ano: dataEmissao.ano };
-      if(!o.dataInicioAditivo) o.dataInicioAditivo = o.dataInicio || null;
+      const ad = (o.aditivos||[]).find(a=>a.id===aditivoId);
+      if(!ad) throw new Error('Aditivo não encontrado.');
+      ad.cronograma = cronograma;
+      if(dataEmissao) ad.dataEmissao = { mes: dataEmissao.mes, ano: dataEmissao.ano };
       await saveObra(o);
       const emissaoTxt = dataEmissao ? ` | Emiss\u00e3o: ${String(dataEmissao.mes).padStart(2,'0')}/${dataEmissao.ano}` : '';
-      showToast(`\u2705 Cronograma de aditivo importado: ${totalMeses} meses${emissaoTxt}.`);
-      renderCronogramaAditivoBox();
+      showToast(`\u2705 Previsto importado: ${totalMeses} meses${emissaoTxt}.`);
+      renderAditivosSection();
       updateDashboard();
     } catch(err){ showToast('\u274c '+err.message,true); console.error(err); }
   };
   input.click();
+}
+
+/* ── Importa cronograma MENSAL (executado) de um aditivo específico ── */
+export function importCronogramaMensalAditivo(aditivoId){
+  const o=currentObra();
+  if(!o||!aditivoId){ showToast('\u26a0\ufe0f Obra ou aditivo não encontrado.',true); return; }
+  const input=document.createElement('input');
+  input.type='file';
+  input.accept='.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
+  input.onchange=async e=>{
+    if(!e.target.files.length) return;
+    const file=e.target.files[0];
+    try{
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      const { cronograma, totalMeses } = parseCronogramaXLSX(wb);
+      const ad = (o.aditivos||[]).find(a=>a.id===aditivoId);
+      if(!ad) throw new Error('Aditivo não encontrado.');
+      ad.cronogramaExecucao = cronograma.map(m => ({
+        mes: m.mes,
+        executadoPct:   m.planejadoPct,
+        executadoValor: m.planejadoValor
+      }));
+      await saveObra(o);
+      showToast(`\u2705 Mensal do aditivo importado: ${totalMeses} meses.`);
+      renderAditivosSection();
+      updateDashboard();
+    } catch(err){ showToast('\u274c '+err.message,true); console.error(err); }
+  };
+  input.click();
+}
+
+/* ── Cria um novo aditivo vazio ── */
+export async function addNovoAditivo(){
+  const o=currentObra();
+  if(!o){ showToast('\u26a0\ufe0f Selecione uma obra antes de adicionar um aditivo.',true); return; }
+  if(!o.aditivos) o.aditivos=[];
+  const idx = o.aditivos.length + 1;
+  o.aditivos.push({
+    id:   'aditivo_'+Date.now(),
+    nome: `Aditivo ${idx}`,
+    cronograma: null,
+    cronogramaExecucao: null,
+    dataEmissao: null
+  });
+  await saveObra(o);
+  showToast(`\u2705 Aditivo ${idx} criado.`);
+  renderAditivosSection();
+  updateDashboard();
+}
+
+/* ── Renomeia aditivo ── */
+export async function renomearAditivo(aditivoId, novoNome){
+  const o=currentObra(); if(!o) return;
+  const ad=(o.aditivos||[]).find(a=>a.id===aditivoId); if(!ad) return;
+  ad.nome = novoNome.trim() || ad.nome;
+  await saveObra(o);
+  renderAditivosSection();
+}
+
+/* ── Remove aditivo ── */
+export async function removerAditivo(aditivoId){
+  const o=currentObra(); if(!o) return;
+  if(!confirm('Remover este aditivo e seu cronograma?')) return;
+  o.aditivos=(o.aditivos||[]).filter(a=>a.id!==aditivoId);
+  await saveObra(o);
+  showToast('\u2705 Aditivo removido.');
+  renderAditivosSection();
+  updateDashboard();
 }
 
 export function setupColabForm(){
@@ -197,8 +271,29 @@ export function bindEvents(){
   const loadMensal=$('loadCronogramaMensal');
   if(loadMensal) loadMensal.onclick=()=>importCronogramaMensal();
 
-  const loadAditivo=$('loadCronogramaAditivo');
-  if(loadAditivo) loadAditivo.onclick=()=>importCronogramaAditivo();
+  // Botão novo aditivo (sidebar)
+  const btnNovoAditivo=$('btnNovoAditivo');
+  if(btnNovoAditivo) btnNovoAditivo.onclick=()=>addNovoAditivo();
+
+  // Delegação de eventos para cards de aditivo (sidebar)
+  const aditivosBox=$('aditivosBox');
+  if(aditivosBox){
+    aditivosBox.addEventListener('click', e=>{
+      const btn = e.target.closest('[data-aditivo-action]');
+      if(!btn) return;
+      const action = btn.dataset.aditivoAction;
+      const id     = btn.dataset.aditivoId;
+      if(action==='previsto') importCronogramaPrevistoAditivo(id);
+      if(action==='mensal')   importCronogramaMensalAditivo(id);
+      if(action==='remover')  removerAditivo(id);
+    });
+    aditivosBox.addEventListener('blur', async e=>{
+      const inp = e.target.closest('[data-aditivo-nome]');
+      if(!inp) return;
+      const id = inp.dataset.aditivoNome;
+      await renomearAditivo(id, inp.value);
+    }, true);
+  }
 
   const exportCsv=$('exportCsv');
   if(exportCsv) exportCsv.onclick=()=>{
