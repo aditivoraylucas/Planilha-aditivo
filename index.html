@@ -100,18 +100,20 @@
         <button id="loadCronograma" class="btn btn-primary" style="width:100%;margin-top:.75rem">&#128197; Importar Cronograma</button>
       </div>
 
-      <!-- CRONOGRAMA MENSAL (EXECUCAO REAL) -->
+      <!-- CRONOGRAMA MENSAL (EXECUCAO REAL DO CONTRATO) -->
       <div class="panel" style="padding:1rem">
         <div class="section-title" style="margin-bottom:.75rem">&#128200; Cronograma Mensal</div>
         <div id="cronogramaMensalBox"></div>
         <button id="loadCronogramaMensal" class="btn btn-primary" style="width:100%;margin-top:.75rem">&#128200; Importar Mensal</button>
       </div>
 
-      <!-- CRONOGRAMA DE ADITIVO -->
+      <!-- ADITIVOS -->
       <div class="panel" style="padding:1rem">
-        <div class="section-title" style="margin-bottom:.75rem">&#128203; Cronograma de Aditivo</div>
-        <div id="cronogramaAditivoBox"></div>
-        <button id="loadCronogramaAditivo" class="btn btn-primary" style="width:100%;margin-top:.75rem">&#128203; Importar Aditivo</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+          <div class="section-title" style="margin:0">&#128203; Aditivos</div>
+          <button id="btnNovoAditivo" class="btn btn-primary" style="font-size:.78rem;padding:.3rem .65rem">&#43; Novo Aditivo</button>
+        </div>
+        <div id="aditivosBox"></div>
       </div>
 
       <!-- ACOES -->
@@ -170,14 +172,17 @@
         </div>
       </div>
 
-      <!-- CURVA S 2 — Cronograma Fisico-Financeiro (planejado x executado real) -->
+      <!-- CURVA S 2 — Contrato: Planejado x Executado Real -->
       <!-- inicia oculto; render.js exibe quando tiver contrato + mensal importados -->
       <div class="panel" style="margin-bottom:1.25rem;display:none" id="sCurveAditivoPanel">
-        <h3 style="margin-bottom:1rem">Curva S &#8212; Cronograma F&#237;sico-Financeiro</h3>
+        <h3 style="margin-bottom:1rem">Curva S &#8212; Cronograma F&#237;sico-Financeiro (Contrato)</h3>
         <div class="chart-scroll-wrap" id="sCurveAditivoScrollWrap">
           <div class="chart-container"><canvas id="sCurveAditivoChart"></canvas></div>
         </div>
       </div>
+
+      <!-- CURVAS S DOS ADITIVOS — geradas dinamicamente pelo render.js -->
+      <div id="aditivosCurvasContainer"></div>
 
       <div class="panel" style="margin-bottom:1.25rem">
         <h3 style="margin-bottom:1rem">&#10133; Nova atividade</h3>
