@@ -1,4 +1,4 @@
-import { $, state, esc, money, pct, calcPctGeral, buildCronogramaTimeline } from './state.js';
+import { $, state, esc, money, pct, calcPctGeral, buildCronogramaTimeline, showToast } from './state.js';
 import { db } from './firebase.js';
 import { doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
@@ -17,11 +17,6 @@ function fmtDate(str){
   return isNaN(d) ? str : d.toLocaleDateString('pt-BR');
 }
 
-/**
- * Calcula a data de término da obra.
- * REGRA: o DIA do término é sempre igual ao DIA do início.
- * Os meses são completos: início 10/06/2026 + 12 meses = 10/06/2027.
- */
 function calcDataFim(dataInicio, totalMeses){
   if(!dataInicio || !totalMeses) return null;
   const [ano, mes, dia] = dataInicio.split('-').map(Number);
@@ -317,8 +312,10 @@ export function renderCronogramaAditivoBox(){
   }
   const temAditivo = Array.isArray(o.cronogramaAditivo) && o.cronogramaAditivo.length > 0;
   const totalMeses = temAditivo ? o.cronogramaAditivo.length : 0;
-  const dataFimStr = (temAditivo && o.dataInicio)
-    ? fmtDate(calcDataFim(o.dataInicio, totalMeses))
+  /* FIX: usa dataInicioAditivo com fallback para dataInicio */
+  const dataBaseAditivo = o.dataInicioAditivo || o.dataInicio;
+  const dataFimStr = (temAditivo && dataBaseAditivo)
+    ? fmtDate(calcDataFim(dataBaseAditivo, totalMeses))
     : null;
 
   if(temAditivo){
@@ -337,14 +334,13 @@ export function renderCronogramaAditivoBox(){
     if(!confirm('Remover o cronograma de aditivo desta obra?')) return;
     delete o.cronogramaAditivo;
     delete o.dataEmissaoAditivo;
+    delete o.dataInicioAditivo;
     await saveObra(o);
     renderCronogramaAditivoBox();
     updateDashboard();
     showToast('✅ Cronograma de aditivo removido.');
   };
 }
-
-import { showToast } from './state.js';
 
 export function updateDashboard(){
   const o=currentObra();
@@ -367,14 +363,15 @@ export function updateDashboard(){
   if($('mainProjContratada')) $('mainProjContratada').textContent = o?.contratada||'-';
   if($('mainProjScope'))      $('mainProjScope').textContent      = o?.medicaoAtual||'-';
 
-  /* Curva S 1 — Contrato oficial (independente, nunca alterada pelo aditivo) */
+  /* Curva S 1 — Contrato oficial */
   state.chartUser = renderCurvaS(
     'sCurveChart', 'sCurveScrollWrap',
     itensParaCurva, state.chartUser,
     o?.cronograma, o?.dataInicio, o?.dataEmissao
   );
 
-  /* Curva S 2 — Cronograma de Aditivo (alimentada por cronogramaAditivo) */
+  /* Curva S 2 — Aditivo
+     FIX Bug 1: usa dataInicioAditivo com fallback para dataInicio */
   const temAditivo = Array.isArray(o?.cronogramaAditivo) && o.cronogramaAditivo.length > 0;
   const panelAditivo = $('sCurveAditivoPanel');
   if(panelAditivo) panelAditivo.style.display = temAditivo ? '' : 'none';
@@ -382,7 +379,9 @@ export function updateDashboard(){
     state.chartUser2 = renderCurvaS(
       'sCurveAditivoChart', 'sCurveAditivoScrollWrap',
       itensParaCurva, state.chartUser2,
-      o.cronogramaAditivo, o?.dataInicio, o?.dataEmissaoAditivo
+      o.cronogramaAditivo,
+      o.dataInicioAditivo || o.dataInicio,   /* FIX Bug 1 */
+      o.dataEmissaoAditivo
     );
   } else {
     if(state.chartUser2){ state.chartUser2.destroy(); state.chartUser2 = null; }
@@ -513,6 +512,11 @@ export function adminObraCardHTML(obra){
 
 export function renderAdminDetail(){
   const panel=$('adminDetailPanel'); if(!panel) return;
+
+  /* FIX Bug 3: nulifica chartAdmin2 antes de reescrever o DOM,
+     evitando destroy() em canvas já removido do DOM em outra obra */
+  if(state.chartAdmin2){ state.chartAdmin2.destroy(); state.chartAdmin2 = null; }
+
   if(!state.adminSelectedUid){ panel.innerHTML='<p style="color:var(--text-muted);padding:1rem">Selecione um colaborador ao lado.</p>'; return; }
   const u=state.allUsers[state.adminSelectedUid];
   if(!u){ panel.innerHTML=''; return; }
@@ -547,7 +551,6 @@ export function renderAdminDetail(){
   const VS   = 'font-size:.95rem;font-weight:700;margin-top:.15rem';
   const VSSM = 'font-size:.82rem;font-weight:700;margin-top:.15rem;word-break:break-word';
 
-  /* Bloco de Curva S do Aditivo — só renderiza HTML se houver aditivo */
   const curvaSAditivoHTML = temAditivo
     ? `<div class="panel" style="margin-bottom:1.5rem">
          <h3 style="margin-bottom:1rem;font-size:.95rem;font-weight:700">Curva S — Cronograma de Aditivo</h3>
@@ -606,15 +609,17 @@ export function renderAdminDetail(){
       it, state.chartAdmin,
       obra.cronograma, obra.dataInicio, obra.dataEmissao
     );
-    /* Curva S 2 — Aditivo (só se existir) */
+    /* Curva S 2 — Aditivo
+       FIX Bug 1: usa dataInicioAditivo com fallback para dataInicio
+       FIX Bug 3: state.chartAdmin2 já está null aqui (zerado no início da função) */
     if(temAditivo){
       state.chartAdmin2 = renderCurvaS(
         'adminCurvaSAditivo', 'adminCurvaSAditivoWrap',
         it, state.chartAdmin2,
-        obra.cronogramaAditivo, obra.dataInicio, obra.dataEmissaoAditivo
+        obra.cronogramaAditivo,
+        obra.dataInicioAditivo || obra.dataInicio,   /* FIX Bug 1 */
+        obra.dataEmissaoAditivo
       );
-    } else {
-      if(state.chartAdmin2){ state.chartAdmin2.destroy(); state.chartAdmin2 = null; }
     }
   });
 }
